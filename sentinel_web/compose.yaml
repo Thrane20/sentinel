@@ -1,0 +1,105 @@
+services:
+  sentinel:
+    build: .
+    ports:
+      - "3000:3000"
+    env_file: .env.local
+    environment:
+      ANIMAL_WORKER_URL: http://animal-alert-worker:3101
+      FRIGATE_URL: http://frigate:5000
+    depends_on:
+      animal-alert-worker:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 10s
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+
+  model-init:
+    build:
+      context: .
+      dockerfile: services/model-init/Dockerfile
+    env_file: .env.local
+    environment:
+      FRIGATE_OPENVINO_DEVICE: ${FRIGATE_OPENVINO_DEVICE:-AUTO}
+    volumes:
+      - animal-models:/models
+      - frigate-config:/frigate-config
+    restart: "no"
+
+  mqtt:
+    image: eclipse-mosquitto:2.0.22
+    restart: unless-stopped
+    volumes:
+      - ./services/mqtt/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    healthcheck:
+      test: ["CMD", "mosquitto_sub", "-h", "127.0.0.1", "-t", "$$SYS/broker/version", "-C", "1", "-W", "3"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  frigate:
+    image: ghcr.io/blakeblackshear/frigate:0.17.2
+    restart: unless-stopped
+    privileged: true
+    shm_size: "512mb"
+    depends_on:
+      model-init:
+        condition: service_completed_successfully
+      mqtt:
+        condition: service_healthy
+    volumes:
+      - frigate-config:/config
+      - animal-models:/models:ro
+      - frigate-media:/media/frigate
+      - type: bind
+        source: /dev/dri
+        target: /dev/dri
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:5000/api/version >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 60s
+
+  animal-alert-worker:
+    build:
+      context: .
+      dockerfile: services/animal-worker/Dockerfile
+    env_file: .env.local
+    environment:
+      MQTT_HOST: mqtt
+      FRIGATE_URL: http://frigate:5000
+      FRIGATE_OPENVINO_DEVICE: ${FRIGATE_OPENVINO_DEVICE:-AUTO}
+      ANIMAL_DB_PATH: /data/animals.db
+      SENTINEL_PUBLIC_URL: ${SENTINEL_PUBLIC_URL:-http://localhost:3000}
+    depends_on:
+      mqtt:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - animal-data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:3101/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  animal-data:
+  animal-models:
+  frigate-config:
+  frigate-media:

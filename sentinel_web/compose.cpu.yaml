@@ -1,0 +1,15 @@
+services:
+  model-init:
+    environment:
+      FRIGATE_OPENVINO_DEVICE: CPU
+
+  frigate:
+    privileged: false
+    volumes: !override
+      - frigate-config:/config
+      - animal-models:/models:ro
+      - frigate-media:/media/frigate
+
+  animal-alert-worker:
+    environment:
+      FRIGATE_OPENVINO_DEVICE: CPU
