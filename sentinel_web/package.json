@@ -1,0 +1,46 @@
+{
+  "name": "sentinel_web",
+  "version": "1.0.0",
+  "description": "",
+  "scripts": {
+    "dev": "next dev --hostname 0.0.0.0",
+    "build": "next build",
+    "start": "node --env-file-if-exists=.env.local scripts/start.mjs",
+    "docker": "node scripts/docker-up.mjs",
+    "docker:foreground": "node scripts/docker-up.mjs --foreground",
+    "docker:check": "docker compose exec sentinel sh -c 'ffmpeg -version | head -n 1 && node -e \"fetch(\\\"http://127.0.0.1:3000/api/health\\\").then(async response => { console.log(await response.text()); if (!response.ok) process.exit(1) })\"'",
+    "docker:animals-check": "docker compose exec animal-alert-worker python -c \"import json,urllib.request; print(json.dumps(json.load(urllib.request.urlopen('http://127.0.0.1:3101/health')), indent=2))\"",
+    "animal-worker:test": "docker compose run --rm --no-deps animal-alert-worker python -m unittest -v test_worker.py",
+    "docker:stream-check": "node scripts/check-stream.mjs",
+    "docker:logs": "docker compose logs --follow --tail=100 sentinel frigate animal-alert-worker mqtt",
+    "docker:status": "docker compose ps",
+    "docker:stop": "docker compose down",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "playwright test"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@fontsource/barlow": "^5.3.0",
+    "@fontsource/barlow-condensed": "^5.3.0",
+    "@fontsource/ibm-plex-mono": "^5.3.0",
+    "hls.js": "^1.7.2",
+    "lucide-react": "^1.41.0",
+    "next": "^16.3.4",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^26.4.1",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^16.3.4",
+    "prettier": "^3.9.6",
+    "typescript": "^6.0.3"
+  },
+  "private": true
+}
