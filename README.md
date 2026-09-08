@@ -39,7 +39,7 @@ There are four main data paths:
 
 1. **Live cameras:** Next.js starts or reuses an FFmpeg process when a camera is opened. FFmpeg reads the IVSEC RTSP stream, converts H.265 to browser-compatible H.264, and produces a short-lived HLS playlist.
 2. **Dashboard snapshots:** Frigate continuously reads the mobile streams. Next.js proxies Frigate's latest JPEG for each camera, avoiding a separate FFmpeg process for every thumbnail.
-3. **Animal detection:** Frigate runs the local MegaDetector model and publishes object events through MQTT. The Python worker applies per-camera confidence, area, movement, and cooldown rules, then stores accepted event metadata in SQLite. Event snapshots stay in Frigate.
+3. **Animal detection:** Frigate runs the local MegaDetector model and publishes object events through MQTT. The Python worker applies per-camera confidence, area, movement, and cooldown rules, then stores accepted event metadata in SQLite. The cooldown limits retained history as well as webhook delivery to one incident per camera during each window. Accepted event snapshots stay in Frigate; duplicate snapshots suppressed by cooldown are removed when their tracks end.
 4. **IVSEC alerts:** The Python worker authenticates to the recorder, backfills alert-class recordings, and follows live recorder events. These alerts are separate from Frigate animal detections.
 
 Animal detection starts in shadow mode. Events appear in Sentinel, but Home Assistant notifications remain disabled until a webhook is configured, tested, and enabled in the Animals screen.
