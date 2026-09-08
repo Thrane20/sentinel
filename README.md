@@ -123,6 +123,14 @@ macOS does not expose Linux `/dev/dri`, so the startup script selects the CPU Co
 
 Install Docker Engine and the Docker Compose plugin, clone this repository onto the Linux server, and create `sentinel_web/.env.local`. Build on Linux so Docker selects the correct platform and can access the host's Intel GPU.
 
+Confirm that the Compose v2 plugin is installed before starting:
+
+```sh
+docker compose version
+```
+
+On Ubuntu or Debian configured with Docker's official package repository, install a missing plugin with `sudo apt-get update` followed by `sudo apt-get install docker-compose-plugin`. An `unknown shorthand flag: 'f' in -f` error from `npm run docker` means the Compose plugin is unavailable and the plain Docker CLI is receiving Compose's arguments.
+
 With Node.js 22 available on the host, the project launcher automatically selects GPU or CPU mode:
 
 ```sh
