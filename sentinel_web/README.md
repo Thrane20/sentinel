@@ -39,6 +39,16 @@ npm run docker:stop
 
 Use `npm run docker:foreground` when diagnosing startup because it keeps the container logs attached to the terminal. After changing `.env.local`, run `npm run docker` again to recreate the container with the new values. A successful `docker:check` proves that FFmpeg and the app are available; open a camera to perform the actual authenticated RTSP connection.
 
+The launcher requires the Docker Compose v2 plugin and checks it with `docker compose version` before startup. If Linux reports an unknown `-f` flag or the check fails, install the plugin from Docker's package repository:
+
+```sh
+sudo apt-get update
+sudo apt-get install docker-compose-plugin
+docker compose version
+```
+
+The older standalone `docker-compose` command is not used by this project.
+
 Alternatively install Node.js 22 and FFmpeg (`sudo apt install ffmpeg` on Debian/Ubuntu), run `npm ci && npm run build && npm start`, and supervise the process with systemd. Allow inbound TCP 3000 from your trusted LAN. The Linux host needs outbound TCP 554 access to the recorder. Optional HTTPS can be supplied by a reverse proxy.
 
 This initial scaffold has no application login: anyone who can reach port 3000 can watch cameras. Keep it on a trusted LAN; add authentication before exposing it beyond that boundary. Credentials are server-only and excluded from Git/Docker build context. They are supplied to FFmpeg as an RTSP URL, so privileged host users can see them in process arguments. Do not use a shared/untrusted server.
