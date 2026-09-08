@@ -122,6 +122,8 @@ def rtsp_url(channel: str) -> str:
 def camera_config(name: str, channel: str) -> str:
     source = json.dumps(rtsp_url(channel))
     max_area = "\n          max_area: 0.10" if channel == "05" else ""
+    object_mask = os.getenv(f"FRIGATE_OBJECT_MASK_CH{channel}", "").strip()
+    mask_line = f"\n          mask: {json.dumps(object_mask)}" if object_mask else ""
     return f"""  {name}:
     ffmpeg:
       inputs:
@@ -142,7 +144,7 @@ def camera_config(name: str, channel: str) -> str:
         animal:
           min_score: 0.72
           threshold: 0.80
-          min_area: 0.007{max_area}
+          min_area: 0.007{max_area}{mask_line}
     record:
       enabled: false
     snapshots:

@@ -54,7 +54,7 @@ The browser requests `/api/snapshot/[channel]`. Next.js fetches the latest JPEG 
 
 Frigate reads the configured mobile streams at two detection frames per second and publishes object events to `frigate/events` through MQTT. The worker subscribes to those events and `frigate/available`, applies its rules, and stores event metadata in SQLite. Snapshot images remain in Frigate.
 
-The Animals screen fetches events through Next.js. Alerts start in shadow mode: detections are visible, but automatic Home Assistant delivery requires a configured webhook and enabled alerts. The worker handles delivery retries and per-camera cooldowns.
+The Animals screen fetches events through Next.js. Alerts start in shadow mode: detections are visible, but automatic Home Assistant delivery requires a configured webhook and enabled alerts. The worker applies the per-camera cooldown before retaining a new incident, so shadow mode and live alerts share the same history rate limit. It also handles webhook delivery retries.
 
 Changing a camera's detection toggle travels from the browser through the Next.js API to the worker, which saves the setting and publishes a retained `frigate/<camera>/detect/set` MQTT command.
 

@@ -14,6 +14,7 @@ class AnimalWorkerTests(unittest.TestCase):
         self.directory = tempfile.TemporaryDirectory()
         worker.DB_PATH = os.path.join(self.directory.name, "animals.db")
         worker.MQTT_CLIENT = None
+        worker.SUPPRESSED_EVENT_IDS.clear()
         worker.initialize()
 
     def tearDown(self):
@@ -77,6 +78,31 @@ class AnimalWorkerTests(unittest.TestCase):
                 "SELECT * FROM events WHERE id='transient-event'"
             ).fetchone()
         self.assertIsNone(row)
+
+    def test_shadow_history_cooldown_keeps_one_event_per_camera(self):
+        now = time.time()
+        first = {
+            "type": "new",
+            "after": {
+                "id": "event-first",
+                "camera": "ch05",
+                "label": "animal",
+                "false_positive": False,
+                "top_score": 0.91,
+                "start_time": now,
+                "box": [64, 36, 192, 144],
+                "has_snapshot": True,
+            },
+        }
+        second = json.loads(json.dumps(first))
+        second["after"]["id"] = "event-second"
+        with patch.object(worker, "event_track_metrics", return_value=(0.05, 3)):
+            worker.handle_event(json.dumps(first).encode())
+            worker.handle_event(json.dumps(second).encode())
+        with worker.connect() as db:
+            rows = db.execute("SELECT id FROM events ORDER BY id").fetchall()
+        self.assertEqual([row["id"] for row in rows], ["event-first"])
+        self.assertIn("event-second", worker.SUPPRESSED_EVENT_IDS)
 
     def test_cooldown_is_camera_specific(self):
         worker.update_settings({"alertsEnabled": True})

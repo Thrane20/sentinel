@@ -42,6 +42,8 @@ FRIGATE_ONLINE = False
 IVSEC_EVENTS_ONLINE = False
 IVSEC_EVENTS_ERROR = "Waiting for recorder"
 IVSEC_EVENTS_LAST_POLL = None
+SUPPRESSED_EVENT_IDS = set()
+SUPPRESSED_LOCK = threading.RLock()
 
 
 def connect():
@@ -369,6 +371,31 @@ def should_alert(slug, confidence, box, travel):
     return (False, "cooldown") if recent else (True, "pending")
 
 
+def camera_event_in_cooldown(slug, event_id):
+    cutoff = time.time() - settings()["cooldownSeconds"]
+    with DB_LOCK, connect() as db:
+        return bool(
+            db.execute(
+                "SELECT 1 FROM events WHERE camera=? AND id<>? AND started_at>? LIMIT 1",
+                (slug, event_id, cutoff),
+            ).fetchone()
+        )
+
+
+def delete_frigate_event(event_id):
+    request = urllib.request.Request(
+        f"{FRIGATE_URL}/api/events/{urllib.parse.quote(event_id, safe='')}",
+        method="DELETE",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=5) as response:
+            return 200 <= response.status < 300
+    except urllib.error.HTTPError as error:
+        return error.code == 404
+    except Exception:
+        return False
+
+
 def reconcile_existing_events():
     # Give Frigate time to start before enriching records created by older worker
     # versions. Rows are removed only when their Frigate metadata is reachable.
@@ -404,10 +431,33 @@ def handle_event(message):
         confidence = float(after.get("top_score") or after.get("score") or 0)
         box = normalize_box((after.get("snapshot") or {}).get("box") or after.get("box"))
         has_snapshot = bool(after.get("has_snapshot"))
+        ended = after.get("end_time") is not None
         now = time.time()
         with DB_LOCK, connect() as db:
             existed = db.execute("SELECT 1 FROM events WHERE id=?", (event_id,)).fetchone()
+        with SUPPRESSED_LOCK:
+            already_suppressed = event_id in SUPPRESSED_EVENT_IDS
+        if already_suppressed:
+            if ended:
+                with SUPPRESSED_LOCK:
+                    SUPPRESSED_EVENT_IDS.discard(event_id)
+                threading.Thread(
+                    target=delete_frigate_event, args=(event_id,), daemon=True
+                ).start()
+            return
         if not has_snapshot and not existed:
+            return
+        # Apply the camera cooldown to retained history as well as notifications.
+        # This stops a noisy scene from creating hundreds of event cards and
+        # snapshots while alerts are disabled in shadow mode.
+        if not existed and camera_event_in_cooldown(slug, event_id):
+            if ended:
+                threading.Thread(
+                    target=delete_frigate_event, args=(event_id,), daemon=True
+                ).start()
+            else:
+                with SUPPRESSED_LOCK:
+                    SUPPRESSED_EVENT_IDS.add(event_id)
             return
         metrics = event_track_metrics(event_id) if has_snapshot else None
         # A live track can qualify as soon as it has travelled far enough. If it
@@ -786,23 +836,9 @@ def clear_events():
     snapshots_deleted = 0
     snapshot_failures = 0
     for event_id in event_ids:
-        request = urllib.request.Request(
-            f"{FRIGATE_URL}/api/events/{urllib.parse.quote(event_id, safe='')}",
-            method="DELETE",
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=5) as response:
-                if 200 <= response.status < 300:
-                    snapshots_deleted += 1
-                else:
-                    snapshot_failures += 1
-        except urllib.error.HTTPError as error:
-            # A missing Frigate event is already in the requested cleared state.
-            if error.code == 404:
-                snapshots_deleted += 1
-            else:
-                snapshot_failures += 1
-        except Exception:
+        if delete_frigate_event(event_id):
+            snapshots_deleted += 1
+        else:
             snapshot_failures += 1
 
     return {

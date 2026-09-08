@@ -95,7 +95,17 @@ action:
         url: "{{ trigger.json.sentinelUrl }}"
 ```
 
-Home Assistant receives no recorder credentials. Failed webhook requests retry after 1, 5, and 30 seconds. Event metadata and alert status live in a SQLite database using WAL mode; snapshots remain in Frigate for 30 days and the worker caps its history at 5,000 events. Detection controls persist across restarts and are synchronized to Frigate through retained MQTT commands.
+Home Assistant receives no recorder credentials. Failed webhook requests retry after 1, 5, and 30 seconds. Event metadata and alert status live in a SQLite database using WAL mode; snapshots remain in Frigate for 30 days and the worker caps its history at 5,000 events. The two-minute per-camera cooldown applies to retained history as well as Home Assistant delivery, so a noisy camera can create at most one Sentinel incident during each cooldown window. Suppressed duplicate Frigate snapshots are removed after their tracks end. Detection controls persist across restarts and are synchronized to Frigate through retained MQTT commands.
+
+### Scene-specific false positives
+
+A confidence threshold cannot remove a branch or gate that the model classifies with high confidence. The event detail view shows the detected box's percentage of frame area, which can guide the per-camera minimum and maximum area controls. For a fixed problem region, configure an animal object mask in `.env.local` using normalized polygon coordinates:
+
+```dotenv
+FRIGATE_OBJECT_MASK_CH05=0.70,0.10,1.00,0.10,1.00,0.80,0.70,0.80
+```
+
+The value above only demonstrates the coordinate format; derive the polygon from the affected camera rather than copying it. The mask rejects a detected object's bottom-center point inside that polygon. After changing a mask, run `npm run docker` and `docker compose restart frigate`. Keep masks as small as possible because a real animal inside a masked region will also be ignored.
 
 The model artifact is pinned to SHA-256 `da4aa4505f8350dcb2cf2001bc329232e1f78188dc1614141a523ff9ef090655`. Before enabling alerts, use representative exported frames containing animals, empty scenes, people, vehicles, distant animals, and partial animals to confirm the model behaves appropriately for these cameras. Model updates require changing the URL and checksum, removing the `animal-models` volume, and repeating that review.
 

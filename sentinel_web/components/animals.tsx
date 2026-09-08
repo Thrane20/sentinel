@@ -83,6 +83,10 @@ function statusLabel(event: Event) {
   return "Shadow mode";
 }
 
+function areaPercent(event: Event) {
+  return event.boundingBox[2] * event.boundingBox[3] * 100;
+}
+
 export function Animals({
   health,
   onOpenCamera,
@@ -261,7 +265,7 @@ export function Animals({
           <strong className={health?.alertsConfigured ? "cyan-text" : "yellow-text"}>
             {health?.alertsConfigured ? (settings?.alertsEnabled ? "Live" : "Shadow") : "Not set"}
           </strong>
-          <small>2-minute camera cooldown</small>
+          <small>One event per camera / 2 minutes</small>
         </div>
       </section>
 
@@ -293,7 +297,7 @@ export function Animals({
                   <div className="animal-event-copy">
                     <span>CH {event.cameraId}</span>
                     <strong>{event.cameraName}</strong>
-                    <small>{formatTime(event.startedAt)} · {Math.round(event.travelPercent * 100)}% movement · {statusLabel(event)}</small>
+                    <small>{formatTime(event.startedAt)} · {Math.round(event.travelPercent * 100)}% movement · {areaPercent(event).toFixed(1)}% area · {statusLabel(event)}</small>
                   </div>
                   {event.acknowledgedAt ? <Check size={17} className="cyan-text" /> : <ExternalLink size={17} />}
                 </button>
@@ -364,6 +368,7 @@ export function Animals({
               <div><dt>Observed</dt><dd>{formatTime(selected.startedAt)}</dd></div>
               <div><dt>Confidence</dt><dd>{Math.round(selected.confidence * 100)}%</dd></div>
               <div><dt>Movement</dt><dd>{Math.round(selected.travelPercent * 100)}%</dd></div>
+              <div><dt>Frame area</dt><dd>{areaPercent(selected).toFixed(1)}%</dd></div>
               <div><dt>Alert</dt><dd>{statusLabel(selected)}</dd></div>
             </dl>
             <div className="animal-detail-actions">
