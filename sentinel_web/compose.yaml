@@ -36,6 +36,7 @@ services:
       FRIGATE_OPENVINO_DEVICE: ${FRIGATE_OPENVINO_DEVICE:-AUTO}
     volumes:
       - animal-models:/models
+      - animal-data:/animal-data:ro
       - frigate-config:/frigate-config
     restart: "no"
 

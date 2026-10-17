@@ -58,11 +58,17 @@ The Animals screen fetches events through Next.js. Alerts start in shadow mode: 
 
 Changing a camera's detection toggle travels from the browser through the Next.js API to the worker, which saves the setting and publishes a retained `frigate/<camera>/detect/set` MQTT command.
 
-### 4. Showing IVSEC recorder alerts
+### 4. Playing recorded camera footage
+
+The camera dialog requests `/api/playback/[channel]?at=<timestamp>`. Next.js starts FFmpeg, which reads a private MP4 stream from the Python worker. The worker authenticates to IVSEC and requests 30 seconds from its continuous recording, beginning five seconds before the selected timestamp. FFmpeg converts the recorder's H.265 substream to a muted 720p H.264 fragmented MP4 for the browser.
+
+Animal events and IVSEC alert rows pass their camera and event timestamp into this same player. Recorder credentials, session cookies, and CSRF tokens remain between the worker and IVSEC.
+
+### 5. Showing IVSEC recorder alerts
 
 The same Python worker authenticates to the recorder using HTTP Digest, then uses the recorder's session and CSRF token. It backfills event history and polls for live event metadata through the recorder's HTTP API. These events also live in SQLite and reach the browser through `/api/ivsec/events`.
 
-These are recorder-generated alerts, separate from Frigate's animal detections. Opening an IVSEC alert currently opens that camera's live view; direct playback of its recorder footage is not implemented.
+These are recorder-generated alerts, separate from Frigate's animal detections. Opening an IVSEC alert sends its camera and captured recorder timestamp to the recorded player.
 
 ## Where the APIs fit
 
@@ -70,7 +76,7 @@ An API is the request interface between components. There are several here:
 
 | API | Caller → server | Purpose |
 | --- | --- | --- |
-| Next.js `/api/stream/...`, `/api/snapshot/...`, `/api/health` | Browser → Next.js | Live video, thumbnails and status |
+| Next.js `/api/stream/...`, `/api/playback/...`, `/api/snapshot/...`, `/api/health` | Browser → Next.js | Live video, recorded clips, thumbnails and status |
 | Next.js `/api/animals/...`, `/api/ivsec/events` | Browser → Next.js | Event lists, settings, acknowledgement, clearing and test alerts |
 | Worker `/events`, `/settings`, `/ivsec-events`, `/health` | Next.js → Python worker | Event storage, controls and service status |
 | Frigate `/api/...` | Next.js or worker → Frigate | Images, detector status and event management |

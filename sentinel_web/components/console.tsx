@@ -26,10 +26,12 @@ import {
 } from "lucide-react";
 import { cameras, type Camera } from "@/lib/cameras";
 import { Player } from "./player";
+import { RecordedPlayer } from "./recorded-player";
 import { Snapshot } from "./snapshot";
 import { Animals, type AnimalHealth } from "./animals";
 import { IvsecEvents } from "./ivsec-events";
 type Tab = "live" | "animals" | "playback" | "system";
+type CameraMode = "live" | "recorded";
 type Health = {
   configured: boolean;
   host: string;
@@ -42,6 +44,11 @@ const navigation = [
   { id: "playback" as const, label: "Playback", icon: Clock3 },
   { id: "system" as const, label: "System", icon: Settings2 },
 ];
+function localDateTimeValue(timestamp: number) {
+  const date = new Date(timestamp * 1000);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
 export function Console() {
   const [tab, setTab] = useState<Tab>("live");
   const [health, setHealth] = useState<Health | null>(null);
@@ -49,6 +56,10 @@ export function Console() {
   const [zone, setZone] = useState("All cameras");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Camera | null>(null);
+  const [cameraMode, setCameraMode] = useState<CameraMode>("live");
+  const [playbackAt, setPlaybackAt] = useState(
+    () => Math.floor(Date.now() / 1000) - 30,
+  );
   const [streamState, setStreamState] = useState("Connecting");
   const [showInactive, setShowInactive] = useState(true);
   const [snapshotTick, setSnapshotTick] = useState(() => Date.now());
@@ -108,9 +119,20 @@ export function Console() {
       (zone === "All cameras" || c.zone === zone) &&
       c.name.toLowerCase().includes(search.toLowerCase()),
   );
-  function openCamera(camera: Camera) {
+  function openCamera(camera: Camera, eventTime?: number) {
     opener.current = document.activeElement as HTMLElement;
+    setPlaybackAt(
+      eventTime ? Math.floor(eventTime) : Math.floor(snapshotTick / 1000) - 30,
+    );
+    setCameraMode("live");
     setStreamState("Connecting");
+    setSelected(camera);
+  }
+  function openPlayback(camera: Camera, detectedAt: number) {
+    opener.current = document.activeElement as HTMLElement;
+    setPlaybackAt(Math.floor(detectedAt));
+    setCameraMode("recorded");
+    setStreamState("Loading recording");
     setSelected(camera);
   }
   return (
@@ -484,11 +506,15 @@ export function Console() {
                   </label>
                 </div>
               </div>
-              <IvsecEvents onOpenCamera={openCamera} />
+              <IvsecEvents onOpenPlayback={openPlayback} />
             </section>
           )}
           {tab === "animals" && (
-            <Animals health={health?.animals || null} onOpenCamera={openCamera} />
+            <Animals
+              health={health?.animals || null}
+              onOpenCamera={openCamera}
+              onOpenPlayback={openPlayback}
+            />
           )}
           {tab === "system" && (
             <>
@@ -692,19 +718,75 @@ export function Console() {
             <X />
           </button>
         </div>
+        <div className="camera-mode-bar" role="group" aria-label="Camera mode">
+          <button
+            className={cameraMode === "live" ? "active" : ""}
+            onClick={() => {
+              setCameraMode("live");
+              setStreamState("Connecting");
+            }}
+          >
+            <Radio size={14} /> Live
+          </button>
+          <button
+            className={cameraMode === "recorded" ? "active" : ""}
+            onClick={() => {
+              setCameraMode("recorded");
+              setStreamState("Loading recording");
+            }}
+          >
+            <Clock3 size={14} /> Playback
+          </button>
+        </div>
+        {cameraMode === "recorded" && (
+          <div className="playback-time-control">
+            <label>
+              MOMENT TO REVIEW
+              <input
+                aria-label="Playback time"
+                type="datetime-local"
+                step="1"
+                value={localDateTimeValue(playbackAt)}
+                onChange={(event) => {
+                  const timestamp = Math.floor(
+                    new Date(event.target.value).getTime() / 1000,
+                  );
+                  if (Number.isFinite(timestamp)) {
+                    setPlaybackAt(timestamp);
+                    setStreamState("Loading recording");
+                  }
+                }}
+              />
+            </label>
+            <span>Playback begins 5 seconds before this time.</span>
+          </div>
+        )}
+        {selected &&
+          (cameraMode === "live" ? (
+            <Player
+              key={`live-${selected.id}`}
+              channel={selected.id}
+              onState={updateStream}
+            />
+          ) : (
+            <RecordedPlayer
+              key={`recorded-${selected.id}-${playbackAt}`}
+              channel={selected.id}
+              detectedAt={playbackAt}
+              onState={updateStream}
+            />
+          ))}
         <div className="dialog-footer">
           <span>
-            <Radio size={14} /> {streamState}
+            {cameraMode === "live" ? <Radio size={14} /> : <Clock3 size={14} />}{" "}
+            {streamState}
           </span>
-          <span>720p / video only · a few seconds behind real time</span>
+          <span>
+            {cameraMode === "live"
+              ? "720p / video only · a few seconds behind real time"
+              : "720p / video only · 30-second recorder clip"}
+          </span>
         </div>
-        {selected && (
-          <Player
-            key={selected.id}
-            channel={selected.id}
-            onState={updateStream}
-          />
-        )}
       </dialog>
     </div>
   );

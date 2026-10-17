@@ -1464,6 +1464,50 @@ dialog::backdrop {
   padding: 10px;
   background: #25302b;
 }
+.camera-mode-bar {
+  display: flex;
+  gap: 8px;
+  padding: 0 22px 14px;
+}
+.camera-mode-bar button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 11px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: #8fa19b;
+  font: 9px var(--mono);
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+}
+.camera-mode-bar button.active {
+  border-color: var(--yellow);
+  color: var(--yellow);
+  background: #e5fb330b;
+}
+.playback-time-control {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 0 22px 17px;
+  color: var(--muted);
+  font: 9px var(--mono);
+}
+.playback-time-control label {
+  display: grid;
+  gap: 7px;
+  color: #9eb0a9;
+}
+.playback-time-control input {
+  border: 1px solid var(--line);
+  background: #090f11;
+  color: #dce6df;
+  padding: 8px 10px;
+  color-scheme: dark;
+  font: 11px var(--mono);
+}
 .player {
   aspect-ratio: 16/9;
   position: relative;
@@ -1625,6 +1669,14 @@ dialog::backdrop {
   }
 }
 @media (max-width: 700px) {
+  .playback-time-control {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 9px;
+  }
+  .playback-time-control input {
+    width: 100%;
+  }
   .sidebar {
     display: none;
   }
@@ -1861,7 +1913,6 @@ dialog::backdrop {
     right: 0;
     bottom: 0;
     padding: 12px 7px 6px;
-    background: linear-gradient(transparent, #09110fe8 42%);
     gap: 3px;
   }
   .camera-info h3 {
@@ -2051,13 +2102,14 @@ dialog::backdrop {
     right: 0;
     left: 0;
     justify-content: flex-end;
-    padding:
-      max(10px, env(safe-area-inset-top))
+    padding: max(10px, env(safe-area-inset-top))
       max(12px, env(safe-area-inset-right));
     pointer-events: none;
   }
   .camera-dialog .dialog-header > div,
-  .camera-dialog .dialog-footer {
+  .camera-dialog .dialog-footer,
+  .camera-dialog .camera-mode-bar,
+  .camera-dialog .playback-time-control {
     display: none;
   }
   .camera-dialog .dialog-header button {

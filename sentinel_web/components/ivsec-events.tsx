@@ -52,9 +52,9 @@ function formatRecorderTime(value: string, fallback: number) {
 }
 
 export function IvsecEvents({
-  onOpenCamera,
+  onOpenPlayback,
 }: {
-  onOpenCamera: (camera: Camera) => void;
+  onOpenPlayback: (camera: Camera, eventTime: number) => void;
 }) {
   const [events, setEvents] = useState<RecorderEvent[]>([]);
   const [health, setHealth] = useState<EventHealth | null>(null);
@@ -105,12 +105,17 @@ export function IvsecEvents({
     setMessage("");
     try {
       const response = await fetch("/api/ivsec/events", { method: "DELETE" });
-      const body = (await response.json()) as { cleared?: number; error?: string };
+      const body = (await response.json()) as {
+        cleared?: number;
+        error?: string;
+      };
       if (!response.ok) throw new Error(body.error || "Clear failed");
       setEvents([]);
       setMessage(`Cleared ${body.cleared || 0} collected alerts.`);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Alerts could not be cleared.");
+      setMessage(
+        error instanceof Error ? error.message : "Alerts could not be cleared.",
+      );
     } finally {
       setClearing(false);
     }
@@ -124,15 +129,29 @@ export function IvsecEvents({
             <span className="slash">{"//"}</span> IVSEC alerts
           </h2>
           <span className={`collector-state ${health?.online ? "online" : ""}`}>
-            {health?.online ? <CheckCircle2 size={12} /> : <AlertTriangle size={12} />}
-            {health?.online ? "Recorder feed connected" : health?.error || "Connecting"}
+            {health?.online ? (
+              <CheckCircle2 size={12} />
+            ) : (
+              <AlertTriangle size={12} />
+            )}
+            {health?.online
+              ? "Recorder feed connected"
+              : health?.error || "Connecting"}
           </span>
         </div>
         <div className="ivsec-alert-actions">
-          <button aria-label="Refresh IVSEC alerts" onClick={() => void load()} disabled={loading}>
+          <button
+            aria-label="Refresh IVSEC alerts"
+            onClick={() => void load()}
+            disabled={loading}
+          >
             <RefreshCw size={14} className={loading ? "spin" : ""} />
           </button>
-          <button className="animal-clear" onClick={() => void clearEvents()} disabled={clearing || !events.length}>
+          <button
+            className="animal-clear"
+            onClick={() => void clearEvents()}
+            disabled={clearing || !events.length}
+          >
             <Trash2 size={13} /> {clearing ? "Clearing…" : "Clear"}
           </button>
         </div>
@@ -147,12 +166,18 @@ export function IvsecEvents({
                 key={event.id}
                 className="ivsec-alert-row"
                 disabled={!camera?.seen}
-                onClick={() => camera && onOpenCamera(camera)}
+                onClick={() =>
+                  camera && onOpenPlayback(camera, event.capturedAt)
+                }
               >
-                <span className="ivsec-alert-icon"><Radio size={15} /></span>
+                <span className="ivsec-alert-icon">
+                  <Radio size={15} />
+                </span>
                 <span>
                   <strong>{event.eventType}</strong>
-                  <small>{formatRecorderTime(event.sourceTime, event.capturedAt)}</small>
+                  <small>
+                    {formatRecorderTime(event.sourceTime, event.capturedAt)}
+                  </small>
                 </span>
                 <span className="ivsec-alert-camera">
                   <b>CH {event.cameraId}</b>
@@ -167,12 +192,17 @@ export function IvsecEvents({
         <div className="empty ivsec-alert-empty">
           <Radio size={32} />
           <h3>{loading ? "Connecting to IVSEC…" : "No collected alerts"}</h3>
-          <p>Recorder alerts from the last seven days will appear here with their camera and timestamp.</p>
+          <p>
+            Recorder alerts from the last seven days will appear here with their
+            camera and timestamp.
+          </p>
         </div>
       )}
       {message && <p className="muted ivsec-alert-message">{message}</p>}
       <p className="ivsec-alert-note">
-        Sentinel reads IVSEC&apos;s alert recordings for the last seven days and follows its live event cursor. Clearing this list does not delete recorder footage.
+        Sentinel reads IVSEC&apos;s alert recordings for the last seven days and
+        follows its live event cursor. Clearing this list does not delete
+        recorder footage.
       </p>
     </section>
   );

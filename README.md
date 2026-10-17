@@ -14,10 +14,11 @@ The current application supports:
 - Local animal detection using Frigate, OpenVINO, and MegaDetector V6.
 - Per-camera confidence, object-area, movement, and enablement controls.
 - Animal event snapshots, acknowledgement, retention, and clearing.
+- Per-camera playback of IVSEC continuous recordings, including five seconds of pre-roll from animal detections.
 - Optional Home Assistant webhook delivery with retries and camera cooldowns.
 - Intel GPU detection on Linux with an automatic CPU fallback.
 
-Direct playback of recorder footage associated with an IVSEC alert, PTZ controls, audio, ONVIF management, and application authentication are not implemented yet.
+PTZ controls, audio, ONVIF management, and application authentication are not implemented yet.
 
 ## How it works
 
@@ -40,7 +41,8 @@ There are four main data paths:
 1. **Live cameras:** Next.js starts or reuses an FFmpeg process when a camera is opened. FFmpeg reads the IVSEC RTSP stream, converts H.265 to browser-compatible H.264, and produces a short-lived HLS playlist.
 2. **Dashboard snapshots:** Frigate continuously reads the mobile streams. Next.js proxies Frigate's latest JPEG for each camera, avoiding a separate FFmpeg process for every thumbnail.
 3. **Animal detection:** Frigate runs the local MegaDetector model and publishes object events through MQTT. The Python worker applies per-camera confidence, area, movement, and cooldown rules, then stores accepted event metadata in SQLite. The cooldown limits retained history as well as webhook delivery to one incident per camera during each window. Accepted event snapshots stay in Frigate; duplicate snapshots suppressed by cooldown are removed when their tracks end.
-4. **IVSEC alerts:** The Python worker authenticates to the recorder, backfills alert-class recordings, and follows live recorder events. These alerts are separate from Frigate animal detections.
+4. **Recorded playback:** The camera dialog can request a 30-second slice of IVSEC's continuous substream. Animal detections open the same player at the detection timestamp, with five seconds of pre-roll. FFmpeg converts the recorder's H.265 MP4 response to browser-compatible H.264 while credentials and recorder session state remain server-side.
+5. **IVSEC alerts:** The Python worker authenticates to the recorder, backfills alert-class recordings, and follows live recorder events. These alerts are separate from Frigate animal detections.
 
 Animal detection starts in shadow mode. Events appear in Sentinel, but Home Assistant notifications remain disabled until a webhook is configured, tested, and enabled in the Animals screen.
 

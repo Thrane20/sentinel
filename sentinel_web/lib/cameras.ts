@@ -6,6 +6,6 @@ export const cameras = [
   { id: "06", name: "Backyard - Down", zone: "Outdoor", seen: true },
   { id: "08", name: "Side Passage", zone: "Outdoor", seen: true },
   { id: "02", name: "Backyard - Up", zone: "Outdoor", seen: false },
-  { id: "07", name: "Boat Shed", zone: "Outdoor", seen: false },
+  { id: "07", name: "Boat Shed", zone: "Outdoor", seen: true },
 ];
 export type Camera = (typeof cameras)[number];

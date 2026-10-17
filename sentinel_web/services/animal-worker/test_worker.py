@@ -4,9 +4,12 @@ import os
 import tempfile
 import time
 import unittest
+from datetime import datetime
 from unittest.mock import patch
 
 import worker
+
+ORIGINAL_FRIGATE_CONFIDENCE = worker.apply_frigate_confidence
 
 
 class AnimalWorkerTests(unittest.TestCase):
@@ -16,6 +19,9 @@ class AnimalWorkerTests(unittest.TestCase):
         worker.MQTT_CLIENT = None
         worker.SUPPRESSED_EVENT_IDS.clear()
         worker.initialize()
+        confidence_patch = patch.object(worker, "apply_frigate_confidence")
+        self.mock_confidence = confidence_patch.start()
+        self.addCleanup(confidence_patch.stop)
 
     def tearDown(self):
         self.directory.cleanup()
@@ -26,7 +32,7 @@ class AnimalWorkerTests(unittest.TestCase):
         self.assertFalse(current["alertsEnabled"])
         self.assertTrue(current["cameras"]["01"]["enabled"])
         self.assertFalse(current["cameras"]["02"]["enabled"])
-        self.assertEqual(current["cameras"]["05"]["threshold"], 0.80)
+        self.assertEqual(current["cameras"]["05"]["threshold"], 0.65)
         self.assertEqual(current["cameras"]["05"]["maxArea"], 0.10)
         self.assertEqual(current["cameras"]["05"]["minTravel"], 0.04)
 
@@ -35,6 +41,117 @@ class AnimalWorkerTests(unittest.TestCase):
         )
         self.assertEqual(updated["cameras"]["05"], {"enabled": False, "threshold": 0.82, "minArea": 0.01, "maxArea": 0.12, "minTravel": 0.05})
         self.assertEqual(worker.settings()["cameras"]["05"], updated["cameras"]["05"])
+
+    def test_hourly_limit_is_per_camera_persistent_and_rolling(self):
+        self.assertEqual(worker.settings()["maxEventsPerHour"], 20)
+        worker.update_settings({"maxEventsPerHour": 1})
+        self.assertEqual(worker.settings()["maxEventsPerHour"], 1)
+        with patch.object(worker.time, "time", return_value=10000):
+            self.assertTrue(worker.admit_hourly_event("ch01", "first"))
+            self.assertTrue(worker.admit_hourly_event("ch01", "first"))
+            self.assertFalse(worker.admit_hourly_event("ch01", "second"))
+            self.assertTrue(worker.admit_hourly_event("ch03", "other-camera"))
+            # Deleting a history row directly does not change the admissions ledger.
+            with worker.connect() as db:
+                db.execute("DELETE FROM events")
+            self.assertFalse(worker.admit_hourly_event("ch01", "third"))
+        with patch.object(worker.time, "time", return_value=13600):
+            self.assertTrue(worker.admit_hourly_event("ch01", "after-hour"))
+        worker.update_settings({"maxEventsPerHour": 0})
+        self.assertTrue(worker.admit_hourly_event("ch01", "unlimited"))
+        for value in (-1, 1.5, 10001, "NaN"):
+            with self.assertRaises(ValueError):
+                worker.update_settings({"maxEventsPerHour": value})
+
+    def test_manual_hourly_reset_keeps_events_and_settings(self):
+        worker.update_settings({"maxEventsPerHour": 1})
+        payload = {"after": {
+            "id": "kept", "camera": "ch05", "label": "animal",
+            "top_score": 0.9, "start_time": time.time() - 200,
+            "box": [64, 36, 192, 144], "has_snapshot": True,
+        }}
+        with patch.object(worker, "event_track_metrics", return_value=(0.05, 3)):
+            worker.handle_event(json.dumps(payload).encode())
+        self.assertFalse(worker.admit_hourly_event("ch05", "blocked"))
+        before = worker.settings()
+        self.assertEqual(worker.reset_hourly_counts(), {"reset": 1})
+        with worker.connect() as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM events").fetchone()[0], 1)
+        self.assertEqual(worker.settings(), before)
+        self.assertTrue(worker.admit_hourly_event("ch05", "after-reset"))
+
+    def test_clearing_events_resets_hourly_allowance_even_without_history(self):
+        worker.update_settings({"maxEventsPerHour": 1})
+        self.assertTrue(worker.admit_hourly_event("ch01", "first"))
+        self.assertFalse(worker.admit_hourly_event("ch01", "blocked"))
+        with patch.object(worker, "delete_frigate_event", return_value=True):
+            worker.clear_events()
+        self.assertTrue(worker.admit_hourly_event("ch01", "after-clear"))
+        self.assertEqual(worker.settings()["maxEventsPerHour"], 1)
+
+    def test_hourly_limit_rejects_new_events_but_allows_existing_updates(self):
+        worker.update_settings({"maxEventsPerHour": 1})
+        payload = {"after": {
+            "id": "accepted", "camera": "ch05", "label": "animal",
+            "top_score": 0.9, "start_time": time.time() - 200,
+            "box": [64, 36, 192, 144], "has_snapshot": True,
+        }}
+        with patch.object(worker, "event_track_metrics", return_value=(0.05, 3)):
+            worker.handle_event(json.dumps(payload).encode())
+            payload["after"]["id"] = "over-limit"
+            worker.handle_event(json.dumps(payload).encode())
+            payload["after"]["id"] = "accepted"
+            payload["after"]["end_time"] = time.time()
+            worker.handle_event(json.dumps(payload).encode())
+        with worker.connect() as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM events").fetchone()[0], 1)
+            self.assertIsNotNone(db.execute("SELECT ended_at FROM events WHERE id='accepted'").fetchone()[0])
+        self.assertIn("over-limit", worker.SUPPRESSED_EVENT_IDS)
+
+    def test_confidence_updates_frigate_and_persists_low_values(self):
+        worker.update_settings({"cameras": {"01": {"threshold": 0.25}, "05": {"threshold": 0.70}}})
+        self.mock_confidence.assert_called_once_with({"01": 0.25, "05": 0.70})
+        worker.initialize()
+        self.assertEqual(worker.settings()["cameras"]["01"]["threshold"], 0.25)
+        self.assertEqual(worker.settings()["cameras"]["05"]["threshold"], 0.70)
+        before = worker.settings()
+        self.mock_confidence.side_effect = ValueError("Frigate unavailable")
+        with self.assertRaises(ValueError):
+            worker.update_settings({"cameras": {"01": {"threshold": 0.60}}})
+        self.assertEqual(worker.settings(), before)
+        for invalid in (0.09, 1, float("nan")):
+            with self.assertRaises(ValueError):
+                worker.update_settings({"cameras": {"01": {"threshold": invalid}}})
+
+    def test_frigate_confidence_live_payload_and_rollback(self):
+        # Exercise the real adapter rather than the settings-layer stub.
+        from unittest.mock import MagicMock
+        live = {"cameras": {"ch01": {"objects": {"filters": {"animal": {
+            "threshold": 0.65, "min_score": 0.50,
+        }}}}, "ch05": {"objects": {"filters": {"animal": {
+            "threshold": 0.65, "min_score": 0.50,
+        }}}}}}
+        def response(body):
+            result = MagicMock()
+            result.__enter__.return_value = io.StringIO(json.dumps(body))
+            return result
+        with patch.object(worker.urllib.request, "urlopen", side_effect=[
+            response(live), response({"success": True}),
+        ]) as request:
+            ORIGINAL_FRIGATE_CONFIDENCE({"01": 0.25})
+            body = json.loads(request.call_args.args[0].data)
+            self.assertEqual(body["update_topic"], "config/cameras/ch01/objects")
+            self.assertEqual(body["requires_restart"], 0)
+            self.assertEqual(body["config_data"]["cameras"]["ch01"]["objects"]["filters"]["animal"],
+                             {"threshold": 0.25, "min_score": 0.25})
+        with patch.object(worker.urllib.request, "urlopen", side_effect=[
+            response(live), response({"success": True}), OSError("offline"),
+            response({"success": True}), response({"success": True}),
+        ]) as request:
+            with self.assertRaisesRegex(ValueError, "Settings were not saved"):
+                ORIGINAL_FRIGATE_CONFIDENCE({"01": 0.60, "05": 0.75})
+            restore = json.loads(request.call_args.args[0].data)
+            self.assertEqual(restore["config_data"]["cameras"]["ch01"]["objects"]["filters"]["animal"]["threshold"], 0.65)
 
     def test_frigate_event_is_retained_in_shadow_mode(self):
         payload = {
@@ -118,7 +235,7 @@ class AnimalWorkerTests(unittest.TestCase):
 
     def test_threshold_and_area_filters(self):
         worker.update_settings({"alertsEnabled": True})
-        self.assertEqual(worker.should_alert("ch05", 0.79, [0, 0, 0.2, 0.2], 0.05), (False, "filtered"))
+        self.assertEqual(worker.should_alert("ch05", 0.64, [0, 0, 0.2, 0.2], 0.05), (False, "filtered"))
         self.assertEqual(worker.should_alert("ch05", 0.9, [0, 0, 0.01, 0.01], 0.05), (False, "filtered"))
         self.assertEqual(worker.should_alert("ch05", 0.9, [0, 0, 0.4, 0.4], 0.05), (False, "filtered"))
         self.assertEqual(worker.should_alert("ch05", 0.9, [0, 0, 0.2, 0.2], 0.02), (False, "filtered"))
@@ -300,6 +417,20 @@ class AnimalWorkerTests(unittest.TestCase):
         worker.clear_ivsec_events()
         self.assertEqual(worker.store_ivsec_records(records), 0)
         self.assertEqual(worker.ivsec_events(), [])
+
+    def test_ivsec_playback_starts_five_seconds_before_detection(self):
+        detected = datetime(2026, 10, 2, 17, 40, 27, tzinfo=worker.RECORDER_TIMEZONE)
+        params = worker.ivsec_playback_params("05", detected.timestamp())
+
+        self.assertEqual(params["channel"], "4")
+        self.assertEqual(params["start_time"], "20261002174022")
+        self.assertEqual(params["end_time"], "20261002174052")
+        self.assertEqual(params["stream_type"], "1")
+        self.assertEqual(params["download_type"], "1")
+
+    def test_ivsec_playback_rejects_unknown_camera(self):
+        with self.assertRaisesRegex(ValueError, "Unknown camera"):
+            worker.ivsec_playback_params("99", time.time())
 
 
 if __name__ == "__main__":

@@ -24,6 +24,9 @@ IVSEC_HOST = os.getenv("IVSEC_HOST", "192.168.68.203")
 IVSEC_USERNAME = os.getenv("IVSEC_USERNAME", "")
 IVSEC_PASSWORD = os.getenv("IVSEC_PASSWORD", "")
 IVSEC_HISTORY_DAYS = min(30, max(1, int(os.getenv("IVSEC_HISTORY_DAYS", "7"))))
+RECORDER_TIMEZONE = timezone(timedelta(hours=10))
+PLAYBACK_PREROLL_SECONDS = 5
+PLAYBACK_DURATION_SECONDS = 30
 MODEL_NAME = "MDV6-mit-yolov9-c"
 CAMERAS = {
     "ch01": {"id": "01", "name": "Front Door", "enabled": True},
@@ -79,6 +82,13 @@ def initialize():
               path_points INTEGER NOT NULL DEFAULT 0,
               updated_at REAL NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS animal_admissions (
+              id TEXT PRIMARY KEY,
+              camera TEXT NOT NULL,
+              accepted_at REAL NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS animal_admissions_camera_time
+              ON animal_admissions(camera, accepted_at);
             CREATE INDEX IF NOT EXISTS events_started_idx ON events(started_at DESC);
             CREATE TABLE IF NOT EXISTS ivsec_events (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -98,13 +108,14 @@ def initialize():
             "globalEnabled": True,
             "alertsEnabled": False,
             "cooldownSeconds": 120,
+            "maxEventsPerHour": 20,
             "retentionDays": 30,
             "maxEvents": 5000,
             "ivsecClearedBefore": 0,
             "cameras": {
                 data["id"]: {
                     "enabled": data["enabled"],
-                    "threshold": 0.80,
+                    "threshold": 0.65,
                     "minArea": 0.007,
                     "maxArea": 0.10 if data["id"] == "05" else 0.99,
                     "minTravel": 0.02 if data["id"] == "06" else 0.04 if data["id"] == "05" else 0.03,
@@ -129,9 +140,6 @@ def initialize():
         for data in CAMERAS.values():
             camera_id = data["id"]
             item = saved_cameras.setdefault(camera_id, defaults["cameras"][camera_id].copy())
-            if item.get("threshold") == 0.70:
-                item["threshold"] = 0.80
-                changed = True
             if item.get("minArea") == 0.005:
                 item["minArea"] = 0.007
                 changed = True
@@ -169,12 +177,70 @@ def settings():
         return {row["key"]: json.loads(row["value"]) for row in db.execute("SELECT * FROM settings")}
 
 
+CONFIDENCE_LOCK = threading.Lock()
+
+
+def apply_frigate_confidence(changes):
+    """Apply object filters live; roll back earlier cameras if a later save fails."""
+    try:
+        with urllib.request.urlopen(f"{FRIGATE_URL}/api/config", timeout=3) as response:
+            live = json.load(response)["cameras"]
+    except Exception:
+        raise ValueError("Frigate is unavailable. Confidence settings were not saved; retry when it is online.") from None
+    applied = []
+
+    def send(slug, filters):
+        body = {
+            "requires_restart": 0,
+            "update_topic": f"config/cameras/{slug}/objects",
+            "config_data": {"cameras": {slug: {"objects": {"filters": {"animal": filters}}}}},
+        }
+        request = urllib.request.Request(
+            f"{FRIGATE_URL}/api/config/set", data=json.dumps(body).encode(),
+            headers={"Content-Type": "application/json"}, method="PUT",
+        )
+        with urllib.request.urlopen(request, timeout=3) as response:
+            if not json.load(response).get("success"):
+                raise ValueError("Frigate rejected the confidence setting")
+
+    try:
+        for camera_id, threshold in changes.items():
+            slug = f"ch{camera_id}"
+            if slug not in live:
+                continue
+            old = live[slug]["objects"]["filters"]["animal"]
+            previous = {key: old[key] for key in ("threshold", "min_score")}
+            applied.append((slug, previous))
+            send(slug, {"threshold": threshold, "min_score": min(0.50, threshold)})
+    except Exception:
+        rollback_failed = False
+        for slug, previous in reversed(applied):
+            try:
+                send(slug, previous)
+            except Exception:
+                rollback_failed = True
+        if rollback_failed:
+            raise ValueError("Frigate update failed and some cameras could not be restored. Check Frigate before retrying.") from None
+        raise ValueError("Frigate confidence could not be applied. Settings were not saved; check Frigate and retry.") from None
+
+
 def update_settings(body):
+    with CONFIDENCE_LOCK:
+        return _update_settings(body)
+
+
+def _update_settings(body):
     current = settings()
+    confidence_changes = {}
     if "globalEnabled" in body:
         current["globalEnabled"] = bool(body["globalEnabled"])
     if "alertsEnabled" in body:
         current["alertsEnabled"] = bool(body["alertsEnabled"])
+    if "maxEventsPerHour" in body:
+        value = float(body["maxEventsPerHour"])
+        if not math.isfinite(value) or not value.is_integer() or not 0 <= value <= 10000:
+            raise ValueError("Hourly limit must be a whole number from 0 to 10000")
+        current["maxEventsPerHour"] = int(value)
     if "cameras" in body and isinstance(body["cameras"], dict):
         for camera_id, patch in body["cameras"].items():
             if camera_id not in current["cameras"] or not isinstance(patch, dict):
@@ -183,7 +249,11 @@ def update_settings(body):
             if "enabled" in patch:
                 item["enabled"] = bool(patch["enabled"])
             if "threshold" in patch:
-                item["threshold"] = min(0.99, max(0.50, float(patch["threshold"])))
+                value = float(patch["threshold"])
+                if not math.isfinite(value) or not 0.10 <= value <= 0.99:
+                    raise ValueError("Confidence must be between 10% and 99%")
+                item["threshold"] = value
+                confidence_changes[camera_id] = value
             if "minArea" in patch:
                 item["minArea"] = min(0.25, max(0.0001, float(patch["minArea"])))
             if "maxArea" in patch:
@@ -192,8 +262,10 @@ def update_settings(body):
                 item["minTravel"] = min(0.25, max(0, float(patch["minTravel"])))
             if item.get("maxArea", 0.99) < item.get("minArea", 0.0001):
                 item["maxArea"] = item["minArea"]
+    if confidence_changes:
+        apply_frigate_confidence(confidence_changes)
     with DB_LOCK, connect() as db:
-        for key in ("globalEnabled", "alertsEnabled", "cameras"):
+        for key in ("globalEnabled", "alertsEnabled", "maxEventsPerHour", "cameras"):
             db.execute("UPDATE settings SET value=? WHERE key=?", (json.dumps(current[key]), key))
     sync_detection(current)
     return current
@@ -349,7 +421,7 @@ def passes_camera_filter(slug, confidence, box, travel):
 def matches_measurement_filter(specific, confidence, box, travel):
     area = max(0, box[2]) * max(0, box[3])
     return (
-        confidence >= specific.get("threshold", 0.80)
+        confidence >= specific.get("threshold", 0.65)
         and area >= specific.get("minArea", 0.007)
         and area <= specific.get("maxArea", 0.99)
         and travel >= specific.get("minTravel", 0.03)
@@ -380,6 +452,23 @@ def camera_event_in_cooldown(slug, event_id):
                 (slug, event_id, cutoff),
             ).fetchone()
         )
+
+
+def admit_hourly_event(slug, event_id):
+    """Reserve one rolling-hour slot, independently of event history clearing."""
+    limit = settings()["maxEventsPerHour"]
+    now = time.time()
+    with DB_LOCK, connect() as db:
+        db.execute("DELETE FROM animal_admissions WHERE accepted_at<=?", (now - 3600,))
+        if db.execute("SELECT 1 FROM animal_admissions WHERE id=?", (event_id,)).fetchone():
+            return True
+        count = db.execute(
+            "SELECT COUNT(*) FROM animal_admissions WHERE camera=?", (slug,)
+        ).fetchone()[0]
+        if limit and count >= limit:
+            return False
+        db.execute("INSERT INTO animal_admissions VALUES (?,?,?)", (event_id, slug, now))
+        return True
 
 
 def delete_frigate_event(event_id):
@@ -467,6 +556,13 @@ def handle_event(message):
                 if after.get("end_time") is not None:
                     print(f"Rejected stationary/filtered animal candidate {event_id}", flush=True)
                 return
+        if not existed and not admit_hourly_event(slug, event_id):
+            if ended:
+                threading.Thread(target=delete_frigate_event, args=(event_id,), daemon=True).start()
+            else:
+                with SUPPRESSED_LOCK:
+                    SUPPRESSED_EVENT_IDS.add(event_id)
+            return
         travel, path_points = metrics or (0.0, 0)
         with DB_LOCK, connect() as db:
             db.execute(
@@ -611,7 +707,7 @@ def recorder_timestamp(date_value, time_value):
     value = f"{date_value} {time_value}"
     try:
         parsed = datetime.strptime(value, "%m/%d/%Y %H:%M:%S")
-        return value, parsed.replace(tzinfo=timezone(timedelta(hours=10))).timestamp()
+        return value, parsed.replace(tzinfo=RECORDER_TIMEZONE).timestamp()
     except ValueError:
         return value, time.time()
 
@@ -734,8 +830,80 @@ def ivsec_session():
     return base, session
 
 
+def ivsec_playback_params(camera_id, detected_at):
+    """Build a short, read-only recorder download beginning before an event."""
+    camera = next(
+        (data for data in CAMERAS.values() if data["id"] == camera_id), None
+    )
+    if camera is None:
+        raise ValueError("Unknown camera")
+    timestamp = float(detected_at)
+    start = datetime.fromtimestamp(
+        timestamp - PLAYBACK_PREROLL_SECONDS, RECORDER_TIMEZONE
+    )
+    end = start + timedelta(seconds=PLAYBACK_DURATION_SECONDS)
+    return {
+        "start_time": start.strftime("%Y%m%d%H%M%S"),
+        "end_time": end.strftime("%Y%m%d%H%M%S"),
+        "channel": str(int(camera_id) - 1),
+        "record_type": str(0xFFFFFFFF),
+        "stream_type": "1",
+        "record_id": "0",
+        "disk_event_id": "0",
+        "download_type": "1",
+    }
+
+
+def stream_ivsec_playback(handler, camera_id, detected_at):
+    if not IVSEC_USERNAME or not IVSEC_PASSWORD:
+        return handler.send_json(503, {"error": "IVSEC credentials are not configured"})
+    try:
+        timestamp = float(detected_at)
+        if timestamp <= 0 or timestamp > time.time() + 60:
+            raise ValueError("Invalid playback time")
+        params = ivsec_playback_params(camera_id, timestamp)
+    except (TypeError, ValueError, OverflowError):
+        return handler.send_json(400, {"error": "Invalid camera or playback time"})
+
+    try:
+        base, session = ivsec_session()
+        with session.post(
+            f"{base}/download.mp4",
+            params=params,
+            stream=True,
+            timeout=(10, 45),
+        ) as response:
+            if response.status_code != 200:
+                try:
+                    reason = response.json().get("reason") or response.json().get("error_code")
+                except (ValueError, AttributeError):
+                    reason = None
+                status = 404 if reason == "no data" else 409 if reason == "playback_mutex" else 502
+                message = (
+                    "No recorder footage is available for that time"
+                    if status == 404
+                    else "The recorder is already serving another playback"
+                    if status == 409
+                    else "The recorder could not provide playback"
+                )
+                return handler.send_json(status, {"error": message})
+
+            handler.send_response(200)
+            handler.send_header("Content-Type", "video/mp4")
+            handler.send_header("Cache-Control", "private, no-store, max-age=0")
+            handler.end_headers()
+            try:
+                for chunk in response.iter_content(64 * 1024):
+                    if chunk:
+                        handler.wfile.write(chunk)
+            except (BrokenPipeError, ConnectionResetError, requests.RequestException):
+                pass
+    except requests.RequestException:
+        return handler.send_json(502, {"error": "The recorder playback service is unavailable"})
+
+
 def sync_ivsec_history(session, base, days):
-    recorder_today = datetime.now(timezone(timedelta(hours=10))).date()
+    recorder_today = datetime.now(RECORDER_TIMEZONE).date()
     channels = [f"CH{data['id'].lstrip('0') or '0'}" for data in CAMERAS.values()]
     stored = 0
     for offset in range(days):
@@ -827,11 +995,20 @@ def ivsec_event_collector():
             time.sleep(5)
 
 
+def reset_hourly_counts():
+    """Release all hourly allowances without removing accepted events."""
+    with DB_LOCK, connect() as db:
+        count = db.execute("SELECT COUNT(*) FROM animal_admissions").fetchone()[0]
+        db.execute("DELETE FROM animal_admissions")
+    return {"reset": count}
+
+
 def clear_events():
-    """Remove Sentinel event metadata and its corresponding Frigate events."""
+    """Remove animal history, reset hourly allowances, and delete snapshots."""
     with DB_LOCK, connect() as db:
         event_ids = [row["id"] for row in db.execute("SELECT id FROM events").fetchall()]
         db.execute("DELETE FROM events")
+        db.execute("DELETE FROM animal_admissions")
 
     snapshots_deleted = 0
     snapshot_failures = 0
@@ -907,6 +1084,13 @@ class Handler(BaseHTTPRequestHandler):
                 200,
                 {"events": ivsec_events(limit), "health": ivsec_event_health()},
             )
+        if path.path == "/ivsec-playback":
+            query = urllib.parse.parse_qs(path.query)
+            return stream_ivsec_playback(
+                self,
+                query.get("camera", [""])[0],
+                query.get("at", [""])[0],
+            )
         if path.path == "/events":
             query = urllib.parse.parse_qs(path.query)
             limit = min(100, max(1, int(query.get("limit", [30])[0])))
@@ -939,6 +1123,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(400, {"error": str(error)})
 
     def do_POST(self):
+        if self.path == "/hourly-counts/reset":
+            return self.send_json(200, reset_hourly_counts())
         if self.path.startswith("/events/") and self.path.endswith("/acknowledge"):
             event_id = urllib.parse.unquote(self.path[len("/events/"):-len("/acknowledge")].rstrip("/"))
             with DB_LOCK, connect() as db:
