@@ -3,6 +3,7 @@ import json
 import os
 import pathlib
 import shutil
+import sqlite3
 import sys
 import tempfile
 import urllib.request
@@ -31,6 +32,7 @@ CAMERAS = (
     ("ch04", "04"),
     ("ch05", "05"),
     ("ch06", "06"),
+    ("ch07", "07"),
     ("ch08", "08"),
 )
 
@@ -121,6 +123,15 @@ def rtsp_url(channel: str) -> str:
 
 def camera_config(name: str, channel: str) -> str:
     source = json.dumps(rtsp_url(channel))
+    detect_enabled = "false" if channel == "07" else "true"
+    threshold = 0.65
+    database = pathlib.Path("/animal-data/animals.db")
+    if database.exists():
+        with sqlite3.connect(f"file:{database}?mode=ro", uri=True) as db:
+            row = db.execute("SELECT value FROM settings WHERE key='cameras'").fetchone()
+        if row:
+            threshold = float(json.loads(row[0]).get(channel, {}).get("threshold", threshold))
+    min_score = min(0.50, threshold)
     max_area = "\n          max_area: 0.10" if channel == "05" else ""
     object_mask = os.getenv(f"FRIGATE_OBJECT_MASK_CH{channel}", "").strip()
     mask_line = f"\n          mask: {json.dumps(object_mask)}" if object_mask else ""
@@ -131,20 +142,20 @@ def camera_config(name: str, channel: str) -> str:
           input_args: preset-rtsp-generic
           roles: [detect]
     detect:
-      enabled: true
+      enabled: {detect_enabled}
       width: 640
       height: 360
       fps: 2
     motion:
-      threshold: 35
-      contour_area: 20
+      threshold: 25
+      contour_area: 10
     objects:
       track: [animal]
       filters:
         animal:
-          min_score: 0.72
-          threshold: 0.80
-          min_area: 0.007{max_area}{mask_line}
+          min_score: {min_score}
+          threshold: {threshold}
+          min_area: 0.001{max_area}{mask_line}
     record:
       enabled: false
     snapshots:

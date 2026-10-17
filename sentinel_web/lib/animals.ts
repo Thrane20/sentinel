@@ -26,7 +26,7 @@ export async function animalWorker(
     return await fetch(`${workerUrl()}${path}`, {
       ...init,
       cache: "no-store",
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(path === "/settings" ? 30000 : 5000),
       headers: {
         ...(init?.body ? { "Content-Type": "application/json" } : {}),
         ...init?.headers,
