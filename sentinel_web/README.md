@@ -69,6 +69,8 @@ pnpm docker:gpu
 
 This builds and recreates the stack with `FRIGATE_OPENVINO_DEVICE=GPU`, including restarting Frigate to load the generated detector configuration. It overrides a CPU setting for this invocation and stops with a clear error if `/dev/dri/renderD128` is missing. OpenVINO GPU mode requires a compatible Intel GPU and working host drivers; this command does not configure NVIDIA or AMD detection. Video decoding still runs on CPU. Use `pnpm docker:gpu --foreground` for attached startup logs, then `pnpm docker:animals-check` to check detector health. Regular `pnpm docker` keeps its existing automatic selection behavior; use `docker:gpu` again for future GPU deployments.
 
+For suspiciously consistent 100% scores, run `pnpm docker:detector-check` on the Docker host. This read-only check loads the latest animal's clean snapshot and runs the same normalized full frame through OpenVINO CPU and GPU, reporting actual scores and the configured input dtype without printing recorder credentials. It temporarily loads a second model and may add load while checking. Full-frame results can differ from Frigate's cropped detection regions; a difference is diagnostic evidence rather than proof of a GPU fault. Sentinel reports the highest score seen during an event, not a calibrated probability. In-progress snapshot requests explicitly ask for bounding boxes; saved snapshots also explicitly enable them. Previously saved unannotated JPEGs are not regenerated.
+
 Animal alerts begin in **shadow mode**. Detections and snapshots appear in Sentinel, but nothing is sent to Home Assistant until all of these steps are complete:
 
 1. Set `SENTINEL_PUBLIC_URL` to the Linux host address reachable from Home Assistant and your iPhone.

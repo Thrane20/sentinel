@@ -167,6 +167,8 @@ def camera_config(name: str, channel: str) -> str:
     snapshots:
       enabled: true
       clean_copy: true
+      bounding_box: true
+      crop: false
       retain:
         default: 30
 """

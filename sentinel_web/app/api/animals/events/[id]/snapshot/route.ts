@@ -24,7 +24,9 @@ export async function GET(
       "",
     );
     const snapshot = await fetch(
-      `${base}/api/events/${encodeURIComponent(id)}/snapshot.jpg`,
+      // In-progress events use API options rather than the saved snapshot
+      // configuration. Without bbox=1, Frigate returns an unannotated frame.
+      `${base}/api/events/${encodeURIComponent(id)}/snapshot.jpg?bbox=1&crop=0`,
       { cache: "no-store", signal: AbortSignal.timeout(5000) },
     );
     if (!snapshot.ok)
