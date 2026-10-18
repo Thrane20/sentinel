@@ -180,13 +180,13 @@ def settings():
 CONFIDENCE_LOCK = threading.Lock()
 
 
-def apply_frigate_confidence(changes):
+def apply_frigate_filters(changes):
     """Apply object filters live; roll back earlier cameras if a later save fails."""
     try:
         with urllib.request.urlopen(f"{FRIGATE_URL}/api/config", timeout=3) as response:
             live = json.load(response)["cameras"]
     except Exception:
-        raise ValueError("Frigate is unavailable. Confidence settings were not saved; retry when it is online.") from None
+        raise ValueError("Frigate is unavailable. Object filter settings were not saved; retry when it is online.") from None
     applied = []
 
     def send(slug, filters):
@@ -204,14 +204,14 @@ def apply_frigate_confidence(changes):
                 raise ValueError("Frigate rejected the confidence setting")
 
     try:
-        for camera_id, threshold in changes.items():
+        for camera_id, filters in changes.items():
             slug = f"ch{camera_id}"
             if slug not in live:
                 continue
             old = live[slug]["objects"]["filters"]["animal"]
-            previous = {key: old[key] for key in ("threshold", "min_score")}
+            previous = {key: old.get(key, [] if key == "mask" else None) for key in filters}
             applied.append((slug, previous))
-            send(slug, {"threshold": threshold, "min_score": min(0.50, threshold)})
+            send(slug, filters)
     except Exception:
         rollback_failed = False
         for slug, previous in reversed(applied):
@@ -221,7 +221,82 @@ def apply_frigate_confidence(changes):
                 rollback_failed = True
         if rollback_failed:
             raise ValueError("Frigate update failed and some cameras could not be restored. Check Frigate before retrying.") from None
-        raise ValueError("Frigate confidence could not be applied. Settings were not saved; check Frigate and retry.") from None
+        raise ValueError("Frigate object filters could not be applied. Settings were not saved; check Frigate and retry.") from None
+
+
+def apply_frigate_confidence(changes):
+    return apply_frigate_filters({key: {"threshold": value, "min_score": min(0.50, value)}
+                                  for key, value in changes.items()})
+
+
+def validate_object_masks(masks):
+    if not isinstance(masks, list) or len(masks) > 20:
+        raise ValueError("Use at most 20 masks per camera")
+    cleaned = []
+    for mask in masks:
+        if not isinstance(mask, str):
+            raise ValueError("Each mask must be a coordinate polygon")
+        try:
+            values = [float(part) for part in mask.split(",")]
+        except ValueError:
+            raise ValueError("Invalid mask coordinates") from None
+        if len(values) < 6 or len(values) > 128 or len(values) % 2:
+            raise ValueError("Each mask needs 3 to 64 points")
+        if any(not math.isfinite(v) or not 0 <= v <= 1 for v in values):
+            raise ValueError("Mask coordinates must be between 0 and 1")
+        points = list(zip(values[::2], values[1::2]))
+        if len(set(points)) != len(points):
+            raise ValueError("Mask points must be distinct")
+        def cross(a, b, c):
+            return (b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0])
+        edges = list(zip(points, points[1:]+points[:1]))
+        for i,(a,b) in enumerate(edges):
+            for j,(c,d) in enumerate(edges):
+                if j <= i + 1 or (i == 0 and j == len(edges)-1):
+                    continue
+                if cross(a,b,c)*cross(a,b,d) < 0 and cross(c,d,a)*cross(c,d,b) < 0:
+                    raise ValueError("Mask edges must not cross")
+        area = abs(sum(a[0]*b[1]-b[0]*a[1] for a,b in zip(points, points[1:]+points[:1]))) / 2
+        if area < 0.000001:
+            raise ValueError("Mask must enclose an area")
+        cleaned.append(",".join(f"{value:.6f}" for value in values))
+    return cleaned
+
+
+def camera_object_masks(camera_id):
+    if f"ch{camera_id}" not in CAMERAS:
+        raise ValueError("Unknown camera")
+    try:
+        with urllib.request.urlopen(f"{FRIGATE_URL}/api/config", timeout=3) as response:
+            config = json.load(response)["cameras"][f"ch{camera_id}"]
+        masks = config["objects"]["filters"]["animal"].get("mask") or []
+        if isinstance(masks, str):
+            masks = [masks]
+        # Frigate's API exposes the original mask coordinates, including legacy pixels.
+        normalized = []
+        for mask in masks:
+            values = [float(v) for v in mask.split(",")]
+            if any(v > 1 for v in values):
+                values = [v / config["detect"]["width" if i % 2 == 0 else "height"]
+                          for i,v in enumerate(values)]
+            normalized.append(",".join(str(v) for v in values))
+        return {"masks": validate_object_masks(normalized)}
+    except Exception:
+        raise ValueError("Could not read camera masks from Frigate. Retry when it is online.") from None
+
+
+def save_object_masks(camera_id, masks):
+    masks = validate_object_masks(masks)
+    with CONFIDENCE_LOCK:
+        # Require the camera to exist in Frigate before changing its saved masks.
+        camera_object_masks(camera_id)
+        apply_frigate_filters({camera_id: {"mask": masks}})
+        with DB_LOCK, connect() as db:
+            row = db.execute("SELECT value FROM settings WHERE key='cameras'").fetchone()
+            cameras = json.loads(row["value"])
+            cameras[camera_id]["objectMasks"] = masks
+            db.execute("UPDATE settings SET value=? WHERE key='cameras'", (json.dumps(cameras),))
+    return {"masks": masks}
 
 
 def update_settings(body):
@@ -1072,6 +1147,11 @@ class Handler(BaseHTTPRequestHandler):
         return json.loads(self.rfile.read(length) or b"{}")
 
     def do_GET(self):
+        if self.path.startswith("/masks/"):
+            try:
+                return self.send_json(200, camera_object_masks(self.path.split("/")[-1]))
+            except ValueError as error:
+                return self.send_json(503, {"error": str(error)})
         path = urllib.parse.urlparse(self.path)
         if path.path == "/health":
             return self.send_json(200, health())
@@ -1123,6 +1203,11 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(400, {"error": str(error)})
 
     def do_POST(self):
+        if self.path.startswith("/masks/"):
+            try:
+                return self.send_json(200, save_object_masks(self.path.split("/")[-1], self.read_json().get("masks")))
+            except (ValueError, TypeError, json.JSONDecodeError) as error:
+                return self.send_json(400, {"error": str(error)})
         if self.path == "/hourly-counts/reset":
             return self.send_json(200, reset_hourly_counts())
         if self.path.startswith("/events/") and self.path.endswith("/acknowledge"):

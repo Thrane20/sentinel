@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { AnimalMaskEditor } from "./animal-mask-editor";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
@@ -200,6 +201,7 @@ export function Animals({
     }
   }
 
+  const [maskCamera, setMaskCamera] = useState<Camera | null>(null);
   const [globalConfidence, setGlobalConfidence] = useState(65);
   const [resettingHourlyCounts, setResettingHourlyCounts] = useState(false);
 
@@ -323,6 +325,7 @@ export function Animals({
         </p>
       )}
 
+      {maskCamera && <AnimalMaskEditor key={maskCamera.id} camera={maskCamera} onClose={() => setMaskCamera(null)} />}
       <div className="animal-layout">
         <section className="panel animal-events">
           <div className="panel-heading">
@@ -515,6 +518,9 @@ export function Animals({
                     />
                     <i />
                   </label>
+                  {cameraSettings && camera.seen && <button className="animal-clear" onClick={() => setMaskCamera(camera)}>
+                    Edit masks / {camera.name}
+                  </button>}
                   {cameraSettings && (
                     <div className="camera-tuning">
                       <label>

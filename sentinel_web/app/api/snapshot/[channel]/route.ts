@@ -4,12 +4,12 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ channel: string }> },
 ) {
   const { channel } = await context.params;
   try {
-    const result = await getSnapshot(channel);
+    const result = await getSnapshot(channel, new URL(request.url).searchParams.get("requireFrames") === "1");
     const headers = { "Cache-Control": "no-store, max-age=0" };
     if (!result.data)
       return Response.json(

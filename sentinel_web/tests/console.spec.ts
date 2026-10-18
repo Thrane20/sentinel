@@ -309,6 +309,63 @@ test("animal event cards and controls render from the local service", async ({
   const globalBody = (await globalSave).postDataJSON();
   expect(Object.keys(globalBody.cameras)).toHaveLength(7);
   expect(globalBody.cameras["05"].threshold).toBe(0.70);
+  let masks: string[] = [];
+  let rejectMasks = false;
+  await page.route("**/api/animals/masks/05", async (route) => {
+    if (route.request().method() === "POST") {
+      if (rejectMasks) return route.fulfill({ status: 503, json: { error: "Frigate unavailable" } });
+      masks = route.request().postDataJSON().masks;
+    }
+    return route.fulfill({ json: { masks } });
+  });
+  let snapshotAttempts = 0;
+  let snapshotUnavailable = true;
+  await page.route("**/api/snapshot/05?*", (route) => {
+    snapshotAttempts += 1;
+    if (snapshotUnavailable) return route.fulfill({
+      status: 503, json: { error: "Recorder snapshot timed out. Retry the capture." },
+    });
+    return route.fulfill({
+    contentType: "image/svg+xml",
+    body: '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="640" height="360" fill="#334433"/></svg>',
+    });
+  });
+  await page.getByRole("button", { name: "Edit masks / Front Drive" }).click();
+  const maskDialog = page.getByRole("dialog", { name: "Animal masks / Front Drive" });
+  await expect(maskDialog.getByRole("alert")).toContainText("Recorder snapshot timed out");
+  await expect(maskDialog.getByRole("button", { name: "Save masks" })).toBeDisabled();
+  snapshotUnavailable = false;
+  await maskDialog.getByRole("button", { name: "Refresh image", exact: true }).click();
+  await expect(maskDialog.getByRole("button", { name: "Refresh image", exact: true })).toBeEnabled();
+  await expect(maskDialog.getByRole("alert")).toHaveCount(0);
+  await expect(maskDialog.getByText("Loading camera snapshot…")).toHaveCount(0);
+  expect(snapshotAttempts).toBeGreaterThanOrEqual(2);
+  const canvas = maskDialog.getByRole("img", { name: "Draw animal masks" });
+  await canvas.click({ position: { x: 20, y: 20 } });
+  await canvas.click({ position: { x: 80, y: 20 } });
+  await canvas.click({ position: { x: 80, y: 70 } });
+  await maskDialog.getByRole("button", { name: "Finish polygon" }).click();
+  await canvas.click({ position: { x: 130, y: 30 } });
+  await canvas.click({ position: { x: 180, y: 30 } });
+  await canvas.click({ position: { x: 180, y: 80 } });
+  await maskDialog.getByRole("button", { name: "Finish polygon" }).click();
+  await maskDialog.getByRole("button", { name: "Save masks" }).click();
+  await expect(maskDialog.getByRole("status")).toContainText("Masks saved");
+  expect(masks).toHaveLength(2);
+  expect(masks[0].split(",").map(Number).every((v) => v >= 0 && v <= 1)).toBeTruthy();
+  await maskDialog.getByRole("button", { name: "Close", exact: true }).click();
+  await page.getByRole("button", { name: "Edit masks / Front Drive" }).click();
+  await expect(maskDialog.getByRole("button", { name: "Mask 2", exact: true })).toBeVisible();
+  await maskDialog.getByRole("button", { name: "Clear masks", exact: true }).click();
+  rejectMasks = true;
+  await maskDialog.getByRole("button", { name: "Save masks" }).click();
+  await expect(maskDialog.getByRole("alert")).toContainText("Frigate unavailable");
+  expect(masks).toHaveLength(2);
+  rejectMasks = false;
+  await maskDialog.getByRole("button", { name: "Save masks" }).click();
+  await expect(maskDialog.getByRole("status")).toContainText("Masks saved");
+  expect(masks).toHaveLength(0);
+  await maskDialog.getByRole("button", { name: "Close", exact: true }).click();
   await page.getByRole("button", { name: /Animal at Front Drive/ }).click();
   await page.getByRole("button", { name: "Play recording" }).click();
   const cameraDialog = page.locator(".camera-dialog");

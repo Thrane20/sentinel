@@ -2128,3 +2128,16 @@ dialog::backdrop {
     aspect-ratio: auto;
   }
 }
+
+.mask-editor { width: min(960px, calc(100vw - 24px)); max-height: 92dvh; overflow: auto; padding: 20px; background: #101819; color: var(--text); border: 1px solid var(--cyan); }
+.mask-editor::backdrop { background: #000b; }
+.mask-heading, .mask-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
+.mask-heading { justify-content: space-between; }
+.mask-editor p { font-size: 13px; line-height: 1.5; }
+.mask-explanation { color: var(--muted); }
+.mask-canvas { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #080d0e; }
+.mask-canvas img { display: block; width: 100%; height: 100%; }
+.mask-canvas svg { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: crosshair; }
+.mask-loading { position: absolute; inset: 0; display: grid; place-items: center; }
+.mask-actions button[aria-pressed="true"] { border-color: var(--yellow); color: var(--yellow); }
+@media (max-width: 600px) { .mask-editor { padding: 12px; } .mask-editor h2 { font-size: 20px; } }
