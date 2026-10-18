@@ -48,7 +48,7 @@ if (requestedGpu && !intelDeviceAvailable) {
 if (requestedGpu) {
   // Override Compose interpolation as well as the worker/model installer setting.
   process.env.FRIGATE_OPENVINO_DEVICE = "GPU";
-  console.log("Starting Frigate animal detection on the Intel GPU (OpenVINO GPU mode).");
+  console.log("Starting Frigate animal detection on the Intel GPU with FP32 precision for MegaDetector.");
 } else if (requestedCpu || forcedCpu || !intelDeviceAvailable) {
   args.push("-f", "compose.cpu.yaml");
   console.log(
@@ -57,7 +57,7 @@ if (requestedGpu) {
       : "Intel render device not found; starting animal detection in CPU mode.",
   );
 } else {
-  console.log("Intel render device found; OpenVINO will prefer the GPU.");
+  console.log("Intel render device found; OpenVINO will prefer the GPU with FP32 precision for MegaDetector.");
 }
 
 args.push("up", "--build", "--remove-orphans");

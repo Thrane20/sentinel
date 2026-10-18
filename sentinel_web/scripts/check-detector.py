@@ -1,6 +1,7 @@
 """Read-only CPU/GPU comparison, run inside the existing Frigate container."""
 
 import json
+import inspect
 from pathlib import Path
 import sys
 import urllib.error
@@ -96,7 +97,8 @@ def inference_checks(core, model_path, tensor):
         except Exception as error:
             print(label + " failed:", str(error))
     print("All runs tested the same full frame. Frigate normally tests cropped regions, so these scores need not equal the saved event score.")
-    print("GPU FP32 is a diagnostic experiment only; this check does not change Frigate's running configuration.")
+    print("The GPU line is an unforced baseline and can still show FP16 errors even with the production fix installed. GPU FP32 tests the precision used by the fixed Sentinel image.")
+    print("This check does not change Frigate's running configuration. Confirm the production detector's device/precision in Frigate startup logs.")
 
 
 def main():
@@ -104,6 +106,9 @@ def main():
     model = config["model"]
     print("Model:", model.get("model_type"), "input dtype:", model.get("input_dtype"))
     configured_devices(config)
+    from frigate.detectors.detection_runners import OpenVINOModelRunner
+    policy_installed = "sentinel_fp32" in inspect.getsource(OpenVINOModelRunner.__init__)
+    print("Production MegaDetector FP32 policy:", "installed (confirm active precision in Frigate startup logs)" if policy_installed else "not installed; rebuild/redeploy Frigate to apply the fix")
     events = json.loads(get("events?labels=animal&has_snapshot=1&limit=10"))
     if not events:
         raise RuntimeError("No animal snapshot is available for comparison.")
