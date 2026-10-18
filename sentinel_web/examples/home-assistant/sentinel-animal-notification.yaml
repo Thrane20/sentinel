@@ -1,0 +1,53 @@
+# Paste into a Home Assistant automation's YAML editor.
+# iPhone action configured for Ian. Replace the private webhook ID before enabling.
+alias: Sentinel animal notification
+mode: queued
+max: 20
+triggers:
+  - trigger: webhook
+    webhook_id: REPLACE_WITH_A_LONG_RANDOM_PRIVATE_ID
+    allowed_methods:
+      - POST
+    local_only: true
+conditions:
+  - condition: template
+    value_template: >-
+      {{ trigger.json.type in
+         ['sentinel.animal.detected', 'sentinel.animal.test'] }}
+actions:
+  - action: persistent_notification.create
+    data:
+      notification_id: "sentinel_{{ trigger.json.eventId }}"
+      title: >-
+        {{ 'Sentinel delivery test' if trigger.json.type == 'sentinel.animal.test'
+           else 'Animal at ' ~ trigger.json.camera.name }}
+      message: >-
+        {{ trigger.json.camera.name }} ·
+        {{ (trigger.json.confidence * 100) | round(0) }}% confidence ·
+        {{ as_timestamp(trigger.json.observedAt) | timestamp_custom('%d %b %Y %I:%M %p') }}.
+
+        [Play recording]({{ trigger.json.playbackUrl }}) ·
+        [Event details]({{ trigger.json.sentinelUrl }})
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ trigger.json.type == 'sentinel.animal.test' }}"
+        sequence:
+          - action: notify.mobile_app_ians_iphone
+            data:
+              title: Sentinel delivery test
+              message: Webhook received. Tap to test opening the recorder at the test time.
+              data:
+                url: "{{ trigger.json.playbackUrl }}"
+                tag: "sentinel_{{ trigger.json.eventId }}"
+    default:
+      - action: notify.mobile_app_ians_iphone
+        data:
+          title: "Animal at {{ trigger.json.camera.name }}"
+          message: >-
+            {{ (trigger.json.confidence * 100) | round(0) }}% confidence ·
+            {{ as_timestamp(trigger.json.observedAt) | timestamp_custom('%d %b %I:%M %p') }}.
+          data:
+            image: "{{ trigger.json.snapshotUrl }}"
+            url: "{{ trigger.json.playbackUrl }}"
+            tag: "sentinel_{{ trigger.json.eventId }}"

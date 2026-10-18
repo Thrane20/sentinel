@@ -2,14 +2,35 @@ import "server-only";
 import { spawn } from "node:child_process";
 
 const pending = new Map<string, Promise<ArrayBuffer>>();
+const frames = new Map<string, { data: ArrayBuffer; expires: number }>();
+const failures = new Map<string, number>();
 
 // One short-lived capture per camera; concurrent refreshes share the same work.
 export function recorderSnapshot(channel: string): Promise<ArrayBuffer> {
+  const cached = frames.get(channel);
+  if (cached && cached.expires > Date.now())
+    return Promise.resolve(cached.data);
+  if ((failures.get(channel) || 0) > Date.now())
+    return Promise.reject(
+      new Error("Recorder snapshot is recovering. Retry shortly."),
+    );
   const existing = pending.get(channel);
   if (existing) return existing;
   if (pending.size >= 2)
     return Promise.reject(new Error("Snapshot capture busy. Retry shortly."));
-  const capture = captureFrame(channel).finally(() => pending.delete(channel));
+  const capture = captureFrame(channel)
+    .then(
+      (data) => {
+        frames.set(channel, { data, expires: Date.now() + 10000 });
+        failures.delete(channel);
+        return data;
+      },
+      (error) => {
+        failures.set(channel, Date.now() + 5000);
+        throw error;
+      },
+    )
+    .finally(() => pending.delete(channel));
   pending.set(channel, capture);
   return capture;
 }

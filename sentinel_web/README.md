@@ -61,6 +61,14 @@ The detector uses Microsoft's MIT-licensed `MDV6-mit-yolov9-c` MegaDetector mode
 
 The startup script checks for `/dev/dri/renderD128`. When it exists, Compose exposes the Intel GPU and `FRIGATE_OPENVINO_DEVICE=AUTO` lets OpenVINO prefer it. When the device is absent, or `FRIGATE_OPENVINO_DEVICE=CPU` is set, startup automatically layers `compose.cpu.yaml` over the stack and removes the device mount. Video decoding remains on CPU so a detector fallback is not defeated by missing VAAPI support. The System and Animals screens report Frigate and event-bus health; live camera playback remains available if detection is offline.
 
+To explicitly use the Intel GPU for animal detection on the Ubuntu Docker host, run from `sentinel_web`:
+
+```sh
+pnpm docker:gpu
+```
+
+This builds and recreates the stack with `FRIGATE_OPENVINO_DEVICE=GPU`, including restarting Frigate to load the generated detector configuration. It overrides a CPU setting for this invocation and stops with a clear error if `/dev/dri/renderD128` is missing. OpenVINO GPU mode requires a compatible Intel GPU and working host drivers; this command does not configure NVIDIA or AMD detection. Video decoding still runs on CPU. Use `pnpm docker:gpu --foreground` for attached startup logs, then `pnpm docker:animals-check` to check detector health. Regular `pnpm docker` keeps its existing automatic selection behavior; use `docker:gpu` again for future GPU deployments.
+
 Animal alerts begin in **shadow mode**. Detections and snapshots appear in Sentinel, but nothing is sent to Home Assistant until all of these steps are complete:
 
 1. Set `SENTINEL_PUBLIC_URL` to the Linux host address reachable from Home Assistant and your iPhone.
@@ -68,34 +76,13 @@ Animal alerts begin in **shadow mode**. Detections and snapshots appear in Senti
 3. Run `npm run docker` again, then use **Animals → Send test alert**.
 4. Review shadow detections for several days, adjust camera confidence, area, or minimum-movement filters, and enable **Send alerts**.
 
-Movement is calculated from Frigate's retained object path. A live candidate is accepted as soon as its path passes the camera's minimum; otherwise Sentinel waits for the final event update and discards it. This intentionally delays stationary candidates while allowing a moving animal through promptly. Frigate's 80% confidence and 0.7% minimum-area limits are detector-wide baselines, so the per-camera controls can make filtering stricter but cannot restore candidates Frigate has already rejected.
+Movement is calculated from Frigate's retained object path. A minimum movement of zero disables Sentinel's movement requirement. Per-camera confidence controls update Frigate and Sentinel together; area, masks, cooldown and hourly caps still determine which detections are accepted.
 
-Example Home Assistant automation, replacing the webhook ID and mobile service name:
+Home Assistant setup and a ready-to-paste automation are available in [docs/HOME_ASSISTANT.md](docs/HOME_ASSISTANT.md) and [examples/home-assistant/sentinel-animal-notification.yaml](examples/home-assistant/sentinel-animal-notification.yaml). The automation sends an iPhone notification with a snapshot and direct playback URL, and keeps a persistent Home Assistant entry with playback/details links. Synthetic test alerts omit the nonexistent test snapshot.
 
-```yaml
-alias: Sentinel animal detected
-mode: queued
-trigger:
-  - platform: webhook
-    webhook_id: sentinel-animal-CHANGE-ME
-    allowed_methods: [POST]
-    local_only: true
-condition:
-  - condition: template
-    value_template: "{{ trigger.json.type == 'sentinel.animal.detected' }}"
-action:
-  - service: notify.mobile_app_your_iphone
-    data:
-      title: "Animal at {{ trigger.json.camera.name }}"
-      message: >-
-        {{ (trigger.json.confidence * 100) | round(0) }}% confidence at
-        {{ trigger.json.observedAt }}
-      data:
-        image: "{{ trigger.json.snapshotUrl }}"
-        url: "{{ trigger.json.sentinelUrl }}"
-```
+The webhook's `playbackUrl` opens the original camera/time directly, including five-second pre-roll, without depending on Sentinel's latest event list or retained metadata. `sentinelUrl` still opens event details by ID. Set `SENTINEL_PUBLIC_URL` to the phone-reachable LAN URL now, or a dedicated HTTPS reverse-proxy hostname later. Compose now honors this value from `.env.local`.
 
-Home Assistant receives no recorder credentials. Failed webhook requests retry after 1, 5, and 30 seconds. Event metadata and alert status live in a SQLite database using WAL mode; snapshots remain in Frigate for 30 days and the worker caps its history at 5,000 events. The two-minute per-camera cooldown applies to retained history as well as Home Assistant delivery, so a noisy camera can create at most one Sentinel incident during each cooldown window. Suppressed duplicate Frigate snapshots are removed after their tracks end. Detection controls persist across restarts and are synchronized to Frigate through retained MQTT commands.
+Home Assistant receives no recorder credentials. Failed webhook requests retry after 1, 5, and 30 seconds. Event metadata and alert status live in a SQLite database using WAL mode; snapshots remain in Frigate for 30 days and the worker caps its history at 5,000 events. The configured per-camera cooldown and hourly acceptance cap apply to retained history as well as Home Assistant delivery. Suppressed duplicate Frigate snapshots are removed after their tracks end. Detection controls persist across restarts and are synchronized to Frigate through retained MQTT commands.
 
 ### Scene-specific false positives
 
@@ -157,3 +144,9 @@ The Animals screen confidence controls update both Frigate animal filters and Se
 Animal mask editor: in Animals → Watch controls, choose Edit masks for a camera. Click/tap vertices on the camera snapshot, Finish polygon, and repeat for multiple exclusion polygons (up to 20). Select a mask to drag its corners or delete it; Clear masks removes all polygons in the draft. Save masks validates and applies the animal object-filter masks live to Frigate, and persists them in SQLite for model-init regeneration. Existing environment masks are loaded from Frigate; once saved, editor masks take precedence over FRIGATE_OBJECT_MASK_CHxx, including an explicitly empty mask list. Closing without saving leaves Frigate unchanged. These are animal object masks, evaluated at the detected box bottom-centre, not motion masks. Frigate must be online to load or save masks.
 
 Mask editor snapshots first use Frigate's latest frame, then fall back to a bounded one-frame FFmpeg capture from the recorder's configured live RTSP stream. Refresh image shows progress and reports the server's error if capture fails. The fallback requires FFmpeg (included in the Sentinel Docker image) and recorder connectivity; credentials stay server-side.
+
+Detection quality: Animals → Watch controls → Detection quality for a camera offers 360p (640×360 on IVSEC_SNAPSHOT_STREAM_INDEX, default stream 2), 720p (1280×720 on main stream 0), and 1080p (1920×1080 on main stream 0), at 2 or 5 FPS. Save and restart Frigate validates/saves the configuration and requests a detector restart; all camera detection/thumbnails pause during restart. Confidence, normalized masks, and event caps remain saved. Per-camera quality persists through model-init regeneration. Start with 720p/2 FPS on one camera and check detector performance. The model remains 640×640; higher input resolution provides more scene detail for Frigate regions, but does not change model weights or guarantee accuracy.
+
+Dashboard snapshot recovery: all previews reject Frigate's camera-error placeholder and fall back to direct recorder captures when needed. Recorder fallback frames are cached for 10 seconds per camera, with at most two simultaneous captures and a retry backoff after failures. The RECORDER PREVIEW label identifies this fallback; a working preview does not prove Frigate detection is healthy. The browser keeps the last good image during failures and waits for each snapshot request to finish before scheduling another, allowing slower captures to complete.
+
+System → Server CPU reports the latest 5-second Linux CPU interval and the counter-weighted average of the latest 12 intervals (about one minute). Sampling runs continuously in the animal worker, independent of open browsers, and resets when that worker restarts. A warm-up indicator shows partial coverage. Linux /proc/stat measures total visible CPU activity, including other host workloads; Docker Desktop reports its Linux VM. 100% means all visible logical CPUs are busy. This requires no Docker socket access or extra container privileges.

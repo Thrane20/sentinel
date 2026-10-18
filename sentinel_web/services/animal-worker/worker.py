@@ -1,4 +1,5 @@
 import json
+from cpu_monitor import CpuMonitor
 import os
 import sqlite3
 import threading
@@ -14,6 +15,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import paho.mqtt.client as mqtt
 import requests
 from requests.auth import HTTPDigestAuth
+
+CPU_MONITOR = CpuMonitor()
 
 DB_PATH = os.getenv("ANIMAL_DB_PATH", "/data/animals.db")
 FRIGATE_URL = os.getenv("FRIGATE_URL", "http://frigate:5000").rstrip("/")
@@ -299,6 +302,99 @@ def save_object_masks(camera_id, masks):
     return {"masks": masks}
 
 
+DETECTION_PROFILES = {"360p": (640, 360), "720p": (1280, 720), "1080p": (1920, 1080)}
+
+
+def detection_source(camera_id, stream):
+    host = os.getenv("IVSEC_HOST", "192.168.68.203")
+    if not all(c.isalnum() or c in ".-" for c in host):
+        raise ValueError("Invalid recorder host")
+    username, password = os.getenv("IVSEC_USERNAME"), os.getenv("IVSEC_PASSWORD")
+    if not username or not password:
+        raise ValueError("Recorder credentials are not configured")
+    # Same raw RTSP construction as model-init: Frigate performs password escaping.
+    return f"rtsp://{username}:{password}@{host}:554/ch{camera_id}/{stream}"
+
+
+def detection_quality(camera_id):
+    if f"ch{camera_id}" not in CAMERAS:
+        raise ValueError("Unknown camera")
+    try:
+        with urllib.request.urlopen(f"{FRIGATE_URL}/api/config", timeout=3) as response:
+            camera = json.load(response)["cameras"][f"ch{camera_id}"]
+        detect = camera["detect"]
+        profile = next((key for key, size in DETECTION_PROFILES.items()
+                        if size == (detect["width"], detect["height"])), None)
+        # Return source index only; recorder URLs and credentials never reach the browser.
+        if len(camera["ffmpeg"]["inputs"]) != 1:
+            raise ValueError("Custom multi-input camera configuration")
+        input_index, detect_input = next((index, item) for index, item in enumerate(camera["ffmpeg"]["inputs"]) if "detect" in item["roles"])
+        path = detect_input["path"]
+        stream = path.rsplit("/", 1)[-1]
+        return {"profile": profile, "fps": detect["fps"], "width": detect["width"],
+                "height": detect["height"], "stream": stream, "inputIndex": input_index}
+    except Exception:
+        raise ValueError("Could not read detection quality from Frigate. Retry when it is online.") from None
+
+
+def save_detection_quality(camera_id, body):
+    profile, fps = body.get("profile"), body.get("fps")
+    if not isinstance(profile, str) or profile not in DETECTION_PROFILES or type(fps) is not int or fps not in (2, 5):
+        raise ValueError("Choose 360p, 720p or 1080p and 2 or 5 FPS")
+    with CONFIDENCE_LOCK:
+        previous = detection_quality(camera_id)
+        if previous["stream"] not in ("0", "1", "2"):
+            raise ValueError("This camera uses a custom stream. Update it in Frigate instead.")
+        stream = os.getenv("IVSEC_SNAPSHOT_STREAM_INDEX", "2") if profile == "360p" else "0"
+        if stream not in ("0", "1", "2"):
+            raise ValueError("Invalid detection stream index")
+        width, height = DETECTION_PROFILES[profile]
+        def write_config(w, h, rate, source_stream):
+            # Frigate 0.17.2 cannot update list-element paths through dotted keys.
+            # Keep this generated stack's single input and its options intact.
+            with urllib.request.urlopen(f"{FRIGATE_URL}/api/config", timeout=3) as response:
+                inputs = json.load(response)["cameras"][f"ch{camera_id}"]["ffmpeg"]["inputs"]
+            if len(inputs) != 1:
+                raise ValueError("Custom multi-input camera configuration")
+            inputs[0]["path"] = detection_source(camera_id, source_stream)
+            data = {"cameras": {f"ch{camera_id}": {
+                "detect": {"width": w, "height": h, "fps": rate},
+                "ffmpeg": {"inputs": inputs},
+            }}}
+            request = urllib.request.Request(
+                f"{FRIGATE_URL}/api/config/set", data=json.dumps({"requires_restart": 1, "config_data": data}).encode(),
+                headers={"Content-Type": "application/json"}, method="PUT",
+            )
+            with urllib.request.urlopen(request, timeout=5) as response:
+                if not json.load(response).get("success"):
+                    raise ValueError("Frigate rejected detection quality")
+        try:
+            write_config(width, height, fps, stream)
+            with DB_LOCK, connect() as db:
+                row = db.execute("SELECT value FROM settings WHERE key='cameras'").fetchone()
+                cameras = json.loads(row["value"])
+                cameras[camera_id]["detectionProfile"] = profile
+                cameras[camera_id]["detectionFps"] = fps
+                db.execute("UPDATE settings SET value=? WHERE key='cameras'", (json.dumps(cameras),))
+        except Exception:
+            try:
+                write_config(previous["width"], previous["height"], previous["fps"], previous["stream"])
+            except Exception:
+                raise ValueError("Detection quality update failed and could not be restored. Check Frigate configuration before restarting.") from None
+            raise ValueError("Detection quality could not be saved. Original configuration restored.") from None
+        restarted = False
+        try:
+            request = urllib.request.Request(f"{FRIGATE_URL}/api/restart", method="POST")
+            with urllib.request.urlopen(request, timeout=5) as response:
+                restarted = bool(json.load(response).get("success"))
+        except Exception:
+            pass
+        return {"profile": profile, "fps": fps, "width": width, "height": height,
+                "stream": stream, "restartRequested": restarted,
+                "message": "Saved. Frigate is restarting; allow up to a minute for detection and thumbnails to return."
+                if restarted else "Saved, but automatic restart failed. Restart Frigate to apply these settings."}
+
+
 def update_settings(body):
     with CONFIDENCE_LOCK:
         return _update_settings(body)
@@ -355,13 +451,37 @@ def sync_detection(current=None):
         MQTT_CLIENT.publish(f"frigate/{slug}/detect/set", "ON" if enabled else "OFF", qos=1, retain=True)
 
 
-def normalize_box(box):
+FRAME_SIZE_LOCK = threading.Lock()
+FRAME_SIZE_CACHE = {}
+FRAME_SIZE_CHECKED = 0.0
+
+
+def detection_frame_size(slug):
+    global FRAME_SIZE_CHECKED
+    with FRAME_SIZE_LOCK:
+        if time.monotonic() - FRAME_SIZE_CHECKED > 5 or slug not in FRAME_SIZE_CACHE:
+            try:
+                with urllib.request.urlopen(f"{FRIGATE_URL}/api/config", timeout=3) as response:
+                    cameras = json.load(response)["cameras"]
+                FRAME_SIZE_CACHE.update({key: (item["detect"]["width"], item["detect"]["height"])
+                                         for key, item in cameras.items()})
+                FRAME_SIZE_CHECKED = time.monotonic()
+            except Exception:
+                pass
+        if slug in FRAME_SIZE_CACHE:
+            return FRAME_SIZE_CACHE[slug]
+    profile = settings()["cameras"].get(camera_data(slug)["id"], {}).get("detectionProfile", "360p")
+    return DETECTION_PROFILES.get(profile, (640, 360))
+
+
+def normalize_box(box, slug=None):
     if not isinstance(box, list) or len(box) != 4:
         return [0, 0, 0, 0]
     x1, y1, x2, y2 = (float(value) for value in box)
     if max(box) <= 1:
         return [round(x1, 5), round(y1, 5), round(x2 - x1, 5), round(y2 - y1, 5)]
-    return [round(x1 / 640, 5), round(y1 / 360, 5), round((x2 - x1) / 640, 5), round((y2 - y1) / 360, 5)]
+    width, height = detection_frame_size(slug) if slug else (640, 360)
+    return [round(x1 / width, 5), round(y1 / height, 5), round((x2 - x1) / width, 5), round((y2 - y1) / height, 5)]
 
 
 def camera_data(slug):
@@ -392,6 +512,10 @@ def event_payload(row):
 def alert_body(row, test=False):
     camera = camera_data(row["camera"])
     event_id = row["id"]
+    playback_query = urllib.parse.urlencode({
+        "tab": "animals", "event": event_id, "playback": "1",
+        "camera": camera["id"], "at": int(row["started_at"]),
+    })
     return {
         "schemaVersion": 1,
         "type": "sentinel.animal.test" if test else "sentinel.animal.detected",
@@ -401,8 +525,9 @@ def alert_body(row, test=False):
         "confidence": row["confidence"],
         "boundingBox": json.loads(row["box"]),
         "movement": row["travel"],
-        "snapshotUrl": f"{PUBLIC_URL}/api/animals/events/{urllib.parse.quote(event_id)}/snapshot",
-        "sentinelUrl": f"{PUBLIC_URL}/?tab=animals&event={urllib.parse.quote(event_id)}",
+        "snapshotUrl": f"{PUBLIC_URL}/api/animals/events/{urllib.parse.quote(event_id, safe='')}/snapshot",
+        "sentinelUrl": f"{PUBLIC_URL}/?{urllib.parse.urlencode({'tab': 'animals', 'event': event_id})}",
+        "playbackUrl": f"{PUBLIC_URL}/?{playback_query}",
     }
 
 
@@ -593,7 +718,7 @@ def handle_event(message):
         event_id = str(after["id"])
         slug = str(after["camera"])
         confidence = float(after.get("top_score") or after.get("score") or 0)
-        box = normalize_box((after.get("snapshot") or {}).get("box") or after.get("box"))
+        box = normalize_box((after.get("snapshot") or {}).get("box") or after.get("box"), slug)
         has_snapshot = bool(after.get("has_snapshot"))
         ended = after.get("end_time") is not None
         now = time.time()
@@ -1147,6 +1272,13 @@ class Handler(BaseHTTPRequestHandler):
         return json.loads(self.rfile.read(length) or b"{}")
 
     def do_GET(self):
+        if self.path == "/system/cpu":
+            return self.send_json(200, CPU_MONITOR.payload())
+        if self.path.startswith("/quality/"):
+            try:
+                return self.send_json(200, detection_quality(self.path.split("/")[-1]))
+            except ValueError as error:
+                return self.send_json(503, {"error": str(error)})
         if self.path.startswith("/masks/"):
             try:
                 return self.send_json(200, camera_object_masks(self.path.split("/")[-1]))
@@ -1203,6 +1335,14 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(400, {"error": str(error)})
 
     def do_POST(self):
+        if self.path.startswith("/quality/"):
+            try:
+                body = self.read_json()
+                if not isinstance(body, dict):
+                    raise ValueError("Invalid detection quality settings")
+                return self.send_json(200, save_detection_quality(self.path.split("/")[-1], body))
+            except (ValueError, TypeError, json.JSONDecodeError) as error:
+                return self.send_json(400, {"error": str(error)})
         if self.path.startswith("/masks/"):
             try:
                 return self.send_json(200, save_object_masks(self.path.split("/")[-1], self.read_json().get("masks")))
@@ -1244,9 +1384,13 @@ def on_disconnect(client, userdata, disconnect_flags, reason_code, properties):
 
 
 def on_message(client, userdata, message):
-    global FRIGATE_ONLINE
+    global FRIGATE_ONLINE, FRAME_SIZE_CHECKED
     if message.topic == "frigate/available":
         FRIGATE_ONLINE = message.payload.decode(errors="replace") == "online"
+        if FRIGATE_ONLINE:
+            with FRAME_SIZE_LOCK:
+                FRAME_SIZE_CACHE.clear()
+                FRAME_SIZE_CHECKED = 0.0
     elif message.topic == "frigate/events":
         handle_event(message.payload)
 
@@ -1263,6 +1407,7 @@ def start_mqtt():
 
 
 if __name__ == "__main__":
+    CPU_MONITOR.start()
     initialize()
     start_mqtt()
     threading.Thread(target=reconcile_existing_events, daemon=True).start()

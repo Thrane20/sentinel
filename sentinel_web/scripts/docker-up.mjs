@@ -28,8 +28,20 @@ if (composeCheck.status !== 0) {
 const args = ["compose", "-f", "compose.yaml"];
 const forcedCpu = process.env.FRIGATE_OPENVINO_DEVICE?.toUpperCase() === "CPU";
 const intelDeviceAvailable = existsSync("/dev/dri/renderD128");
+const requestedGpu = process.argv.includes("--gpu");
 
-if (forcedCpu || !intelDeviceAvailable) {
+if (requestedGpu && !intelDeviceAvailable) {
+  console.error(
+    "GPU mode requires a supported Intel GPU exposed at /dev/dri/renderD128 on the Linux Docker host. No render device was found. Use 'pnpm docker' for automatic CPU fallback.",
+  );
+  process.exit(1);
+}
+
+if (requestedGpu) {
+  // Override Compose interpolation as well as the worker/model installer setting.
+  process.env.FRIGATE_OPENVINO_DEVICE = "GPU";
+  console.log("Starting Frigate animal detection on the Intel GPU (OpenVINO GPU mode).");
+} else if (forcedCpu || !intelDeviceAvailable) {
   args.push("-f", "compose.cpu.yaml");
   console.log(
     forcedCpu
@@ -41,6 +53,9 @@ if (forcedCpu || !intelDeviceAvailable) {
 }
 
 args.push("up", "--build", "--remove-orphans");
+// Frigate reads a generated config volume. Recreate it after model-init writes
+// GPU mode, even when the Frigate service definition itself hasn't changed.
+if (requestedGpu) args.push("--force-recreate");
 if (!process.argv.includes("--foreground")) args.push("--detach");
 
 const child = spawn("docker", args, { stdio: "inherit" });

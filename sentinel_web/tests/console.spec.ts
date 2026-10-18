@@ -309,6 +309,22 @@ test("animal event cards and controls render from the local service", async ({
   const globalBody = (await globalSave).postDataJSON();
   expect(Object.keys(globalBody.cameras)).toHaveLength(7);
   expect(globalBody.cameras["05"].threshold).toBe(0.70);
+  let quality = { profile: "360p", fps: 2, width: 640, height: 360, stream: "2" };
+  await page.route("**/api/animals/quality/05", (route) => {
+    if (route.request().method() === "POST") {
+      expect(route.request().postDataJSON()).toEqual({ profile: "720p", fps: 2 });
+      quality = { profile: "720p", fps: 2, width: 1280, height: 720, stream: "0" };
+      return route.fulfill({json:{...quality, restartRequested:true, message:"Saved. Frigate is restarting."}});
+    }
+    return route.fulfill({json:quality});
+  });
+  await page.getByRole("button", {name:"Detection quality / Front Drive"}).click();
+  const qualityDialog = page.getByRole("dialog", {name:"Detection quality / Front Drive"});
+  await expect(qualityDialog.getByLabel("Detection resolution")).toHaveValue("360p");
+  await qualityDialog.getByLabel("Detection resolution").selectOption("720p");
+  await qualityDialog.getByRole("button", {name:"Save and restart Frigate"}).click();
+  await expect(qualityDialog.getByRole("status")).toContainText("Frigate is restarting");
+  await qualityDialog.getByRole("button", {name:"Close",exact:true}).click();
   let masks: string[] = [];
   let rejectMasks = false;
   await page.route("**/api/animals/masks/05", async (route) => {
@@ -412,4 +428,97 @@ test("stream routes restrict channel and filename and keep credentials private",
   expect(health.configured).toBe(false);
   expect(health.animals).toBeNull();
   expect(health).not.toHaveProperty("password");
+});
+
+test("dashboard retains good frames and recovers from slow fallback snapshots", async ({ page }) => {
+  await page.route("**/api/health", route => route.fulfill({json:{configured:true,host:"recorder.local",animals:null}}));
+  await page.route("**/api/snapshot/**", route => route.fulfill({status:503,json:{error:"Unavailable"}}));
+  let source="recorder";
+  let fail=false;
+  let failedResponses=0;
+  await page.route("**/api/snapshot/01?*", async route => {
+    if(fail){await route.fulfill({status:503,json:{error:"Unavailable"}});failedResponses++;return;}
+    // Longer than the dashboard's old global tick: this must still render.
+    await new Promise(resolve=>setTimeout(resolve,1300));
+    await route.fulfill({contentType:"image/svg+xml",headers:{"X-Snapshot-Source":source},
+      body:'<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="640" height="360" fill="#334433"/></svg>'});
+  });
+  await page.goto("/");
+  const image=page.getByRole("img",{name:"Latest snapshot from Front Door"});
+  await expect(image).toBeVisible();
+  await expect(page.getByText("RECORDER PREVIEW",{exact:true})).toHaveCount(1);
+  const previous=await image.getAttribute("src");
+  fail=true;
+  await expect.poll(()=>failedResponses).toBeGreaterThan(0);
+  await expect(image).toHaveAttribute("src",previous!);
+  source="frigate";fail=false;
+  await expect(page.getByText("RECORDER PREVIEW",{exact:true})).toHaveCount(0);
+  await expect(image).toBeVisible();
+});
+
+test("System reports CPU averages, warmup, refresh and unavailable state", async ({page}) => {
+  let mode="ready";
+  let requests=0;
+  await page.route("**/api/system/cpu", route => {
+    requests++;
+    if(mode==="error")return route.fulfill({status:503,json:{error:"Unavailable"}});
+    return route.fulfill({json:{available:true,currentPercent:mode==="warm"?null:42.5,averagePercent:mode==="warm"?null:31.2,
+      samples:mode==="warm"?0:12,coverageSeconds:mode==="warm"?0:60,sampleIntervalSeconds:5,windowSeconds:60,cpuCount:8,sampledAt:Date.now()/1000,scope:"Linux host / Docker VM"}});
+  });
+  await page.goto("/");
+  await page.getByRole("navigation",{name:"Mobile navigation"}).getByRole("button",{name:"System"}).click();
+  await expect(page.getByRole("heading",{name:"Server CPU"})).toBeVisible();
+  await expect(page.getByLabel("Latest CPU usage",{exact:true})).toHaveText("42.5%");
+  await expect(page.getByLabel("Average CPU usage",{exact:true})).toHaveText("31.2%");
+  await expect(page.getByText("12/12 samples · 60s coverage · 8 logical CPUs")).toBeVisible();
+  mode="error";
+  await expect(page.getByText("CPU statistics unavailable. Retrying every 5 seconds.")).toBeVisible({timeout:10000});
+  await expect(page.getByLabel("Average CPU usage",{exact:true})).toHaveText("—");
+  mode="warm";
+  await expect(page.getByText("Collecting the first CPU sample…")).toBeVisible({timeout:10000});
+  expect(requests).toBeGreaterThanOrEqual(3);
+});
+
+test("notification playback links open the original recording without event metadata", async ({page}) => {
+  await page.route("**/api/health",route=>route.fulfill({json:{configured:true,host:"recorder.local",animals:null}}));
+  await page.route("**/api/animals/settings",route=>route.fulfill({json:{globalEnabled:true,alertsEnabled:false,cooldownSeconds:30,maxEventsPerHour:5,cameras:{}}}));
+  await page.route("**/api/animals/events?*",route=>route.fulfill({json:{events:[],nextBefore:null}}));
+  let eventLookups=0;
+  await page.route("**/api/animals/events/cleared-event",route=>{eventLookups++;return route.fulfill({status:404,json:{error:"Unknown event"}});});
+  await page.route("**/api/playback/**",route=>route.fulfill({status:200,contentType:"video/mp4",body:Buffer.from([])}));
+  await page.goto("/?tab=animals&event=cleared-event&playback=1&camera=05&at=1788764730");
+  const dialog=page.locator(".camera-dialog");
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("heading",{name:"Front Drive"})).toBeVisible();
+  await expect(dialog.locator("video")).toHaveAttribute("src",/\/api\/playback\/05\?at=1788764730/);
+  await expect(dialog.getByText("Playback begins 5 seconds before this time.")).toBeVisible();
+  await expect(page.locator(".animal-dialog")).not.toBeVisible();
+  expect(eventLookups).toBe(0);
+  await dialog.getByRole("button",{name:"Close camera"}).click();
+  await expect(dialog).not.toBeVisible();
+});
+
+test("invalid notification links never fall back to current-time playback",async({page})=>{
+  let playbackRequests=0;
+  await page.route("**/api/playback/**",route=>{playbackRequests++;return route.fulfill({status:400,json:{error:"Invalid playback time"}});});
+  await page.goto("/?tab=animals&playback=1&camera=05&at=not-a-time");
+  await expect(page.getByRole("alert").filter({hasText:"This playback link is invalid"})).toBeVisible();
+  await expect(page.locator(".camera-dialog")).not.toBeVisible();
+  expect(playbackRequests).toBe(0);
+});
+
+test("event details deep links resolve outside the latest event list and report missing events",async({page})=>{
+  await page.route("**/api/animals/settings",route=>route.fulfill({json:{globalEnabled:true,alertsEnabled:false,cooldownSeconds:30,maxEventsPerHour:5,cameras:{}}}));
+  await page.route("**/api/animals/events?*",route=>route.fulfill({json:{events:[],nextBefore:null}}));
+  await page.route("**/api/animals/events/older-event",route=>route.fulfill({json:{id:"older-event",cameraId:"05",cameraName:"Front Drive",startedAt:1788764730,endedAt:1788764740,confidence:0.91,boundingBox:[0.1,0.1,0.2,0.2],travelPercent:0,hasSnapshot:true,snapshotUrl:"/icon.svg",alertStatus:"sent",alertAttempts:1,suppressed:false,acknowledgedAt:null}}));
+  await page.goto("/?tab=animals&event=older-event");
+  const dialog=page.locator(".animal-dialog");
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("heading",{name:"Front Drive"})).toBeVisible();
+  await dialog.getByRole("button",{name:"Close animal event"}).click();
+  await expect(dialog).not.toBeVisible();
+  await page.route("**/api/animals/events/missing-event",route=>route.fulfill({status:404,json:{error:"Unknown event"}}));
+  await page.goto("/?tab=animals&event=missing-event");
+  await expect(page.getByRole("alert").filter({hasText:"This event is no longer in Sentinel history"})).toBeVisible();
+  await expect(page.locator(".animal-dialog")).not.toBeVisible();
 });

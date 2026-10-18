@@ -111,18 +111,17 @@ def adapt_for_frigate(source: pathlib.Path) -> None:
     onnx.save(model, MODEL_PATH)
 
 
-def rtsp_url(channel: str) -> str:
+def rtsp_url(channel: str, stream: str | None = None) -> str:
     # Frigate performs the required FFmpeg password escaping when it loads the
     # config. Supplying a pre-escaped value here would encode '%' a second time.
     username = os.environ["IVSEC_USERNAME"]
     password = os.environ["IVSEC_PASSWORD"]
     host = os.getenv("IVSEC_HOST", "192.168.68.203")
-    stream = os.getenv("IVSEC_SNAPSHOT_STREAM_INDEX", "2")
+    stream = stream if stream is not None else os.getenv("IVSEC_SNAPSHOT_STREAM_INDEX", "2")
     return f"rtsp://{username}:{password}@{host}:554/ch{channel}/{stream}"
 
 
 def camera_config(name: str, channel: str) -> str:
-    source = json.dumps(rtsp_url(channel))
     detect_enabled = "false" if channel == "07" else "true"
     threshold = 0.65
     saved_camera = {}
@@ -133,6 +132,10 @@ def camera_config(name: str, channel: str) -> str:
         if row:
             saved_camera = json.loads(row[0]).get(channel, {})
             threshold = float(saved_camera.get("threshold", threshold))
+    profile = saved_camera.get("detectionProfile", "360p")
+    width, height = {"360p": (640, 360), "720p": (1280, 720), "1080p": (1920, 1080)}.get(profile, (640, 360))
+    fps = saved_camera.get("detectionFps", 2)
+    source = json.dumps(rtsp_url(channel, "0" if profile in ("720p", "1080p") else None))
     min_score = min(0.50, threshold)
     max_area = "\n          max_area: 0.10" if channel == "05" else ""
     object_mask = os.getenv(f"FRIGATE_OBJECT_MASK_CH{channel}", "").strip()
@@ -146,9 +149,9 @@ def camera_config(name: str, channel: str) -> str:
           roles: [detect]
     detect:
       enabled: {detect_enabled}
-      width: 640
-      height: 360
-      fps: 2
+      width: {width}
+      height: {height}
+      fps: {fps}
     motion:
       threshold: 25
       contour_area: 10

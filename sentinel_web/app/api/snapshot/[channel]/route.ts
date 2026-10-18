@@ -4,12 +4,12 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(
-  request: Request,
+  _request: Request,
   context: { params: Promise<{ channel: string }> },
 ) {
   const { channel } = await context.params;
   try {
-    const result = await getSnapshot(channel, new URL(request.url).searchParams.get("requireFrames") === "1");
+    const result = await getSnapshot(channel);
     const headers = { "Cache-Control": "no-store, max-age=0" };
     if (!result.data)
       return Response.json(
@@ -17,7 +17,11 @@ export async function GET(
         { status: result.status, headers },
       );
     return new Response(new Uint8Array(result.data), {
-      headers: { ...headers, "Content-Type": "image/jpeg" },
+      headers: {
+        ...headers,
+        "Content-Type": "image/jpeg",
+        "X-Snapshot-Source": result.source || "frigate",
+      },
     });
   } catch {
     return Response.json(
