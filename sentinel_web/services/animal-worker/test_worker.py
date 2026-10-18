@@ -153,6 +153,28 @@ class AnimalWorkerTests(unittest.TestCase):
             restore = json.loads(request.call_args.args[0].data)
             self.assertEqual(restore["config_data"]["cameras"]["ch01"]["objects"]["filters"]["animal"]["threshold"], 0.65)
 
+    def test_masks_validate_save_clear_and_preserve_other_settings(self):
+        masks = ["0.8,0.1,0.9,0.1,0.9,0.4", "0.1,0.2,0.2,0.2,0.2,0.3"]
+        before = worker.settings()
+        with patch.object(worker, "camera_object_masks", return_value={"masks": []}), patch.object(worker, "apply_frigate_filters") as apply:
+            saved = worker.save_object_masks("05", masks)
+            apply.assert_called_once_with({"05": {"mask": saved["masks"]}})
+            self.assertEqual(worker.settings()["cameras"]["05"]["objectMasks"], saved["masks"])
+            self.assertEqual(worker.settings()["cameras"]["01"], before["cameras"]["01"])
+            worker.initialize()
+            self.assertEqual(worker.settings()["cameras"]["05"]["objectMasks"], saved["masks"])
+            self.assertEqual(worker.save_object_masks("05", []), {"masks": []})
+            snapshot = worker.settings()
+            apply.side_effect = ValueError("offline")
+            with self.assertRaises(ValueError):
+                worker.save_object_masks("05", masks)
+            self.assertEqual(worker.settings(), snapshot)
+        for invalid in (None, "x", ["0,0,1,1"], ["0,0,1,1,2,0"],
+                        ["0,0,0.5,0.5,1,1"], ["0,0,NaN,1,1,0"],
+                        ["0,0,1,1,0,1,1,0"], masks * 11):
+            with self.assertRaises(ValueError):
+                worker.validate_object_masks(invalid)
+
     def test_frigate_event_is_retained_in_shadow_mode(self):
         payload = {
             "type": "new",

@@ -125,16 +125,19 @@ def camera_config(name: str, channel: str) -> str:
     source = json.dumps(rtsp_url(channel))
     detect_enabled = "false" if channel == "07" else "true"
     threshold = 0.65
+    saved_camera = {}
     database = pathlib.Path("/animal-data/animals.db")
     if database.exists():
         with sqlite3.connect(f"file:{database}?mode=ro", uri=True) as db:
             row = db.execute("SELECT value FROM settings WHERE key='cameras'").fetchone()
         if row:
-            threshold = float(json.loads(row[0]).get(channel, {}).get("threshold", threshold))
+            saved_camera = json.loads(row[0]).get(channel, {})
+            threshold = float(saved_camera.get("threshold", threshold))
     min_score = min(0.50, threshold)
     max_area = "\n          max_area: 0.10" if channel == "05" else ""
     object_mask = os.getenv(f"FRIGATE_OBJECT_MASK_CH{channel}", "").strip()
-    mask_line = f"\n          mask: {json.dumps(object_mask)}" if object_mask else ""
+    masks = saved_camera.get("objectMasks", [object_mask] if object_mask else [])
+    mask_line = f"\n          mask: {json.dumps(masks)}" if masks else ""
     return f"""  {name}:
     ffmpeg:
       inputs:
