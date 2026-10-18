@@ -29,6 +29,7 @@ import { Player } from "./player";
 import { RecordedPlayer } from "./recorded-player";
 import { Snapshot } from "./snapshot";
 import { CpuActivity } from "./cpu-activity";
+import { RecorderSecurity } from "./recorder-security";
 import { parsePlaybackLink } from "@/lib/playback-link";
 import { Animals, type AnimalHealth } from "./animals";
 import { IvsecEvents } from "./ivsec-events";
@@ -180,19 +181,6 @@ export function Console() {
           ))}
         </nav>
         <div className="side-bottom">
-          <div className="network-symbol">
-            <Shield size={23} />
-          </div>
-          <strong>
-            Your perimeter.
-            <br />
-            Your control.
-          </strong>
-          <p>
-            Private infrastructure.
-            <br />
-            Always on your network.
-          </p>
           <div className="local-tag">
             <span /> LOCAL ACCESS
           </div>
@@ -256,7 +244,7 @@ export function Console() {
               </button>
             </div>
           )}
-          {(tab === "playback" || tab === "system") && (
+          {tab === "system" && (
             <section className="stats" aria-label="System overview">
               <div>
                 <span className="stat-icon">
@@ -308,7 +296,10 @@ export function Console() {
             <>
               <div className="live-summary">
                 <div>
-                  <h1>Live cameras</h1>
+                  <div className="live-title-row">
+                    <h1>Live cameras</h1>
+                    <RecorderSecurity />
+                  </div>
                   <span className="live-status">
                     <span className={health?.configured ? "online" : ""} />
                     {healthError

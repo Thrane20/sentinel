@@ -58,3 +58,11 @@ Point the reverse proxy at Sentinel port 3000 and forward normal HTTP/video stre
 Update `.env.local` and redeploy to change URLs in new notifications. Existing notifications retain the address they were sent with. Home Assistant's own remote access does not proxy Sentinel links or snapshots; the phone must be able to reach Sentinel through LAN, VPN or the future proxy.
 
 The Home Screen icon provides an app-like web experience but does not register a `sentinel://` URI scheme. Notification links use standard HTTP(S); iOS chooses the browser/web-app context, so launching the existing standalone Home Screen window is not guaranteed.
+
+## Recorder arming control
+
+The home screen's IVSEC control changes the recorder's global `disarming` flag. It preserves configured disarming channels, schedules and alarm actions. It does not change Sentinel's separate Frigate detection or Home Assistant alert settings.
+
+A green Armed badge means IVSEC reported `disarming: false`; the red Disarmed banner means it reported `true`. Sentinel checks status every ten seconds, reads it back after each change, and shows Status unavailable if it cannot verify the flag. This describes IVSEC's global flag rather than independently checking every alarm schedule or channel.
+
+Recorder credentials stay in the worker. Changes use an authenticated recorder session and a read/modify/write/read sequence. Access to Sentinel's existing LAN interface now also permits arming changes; keep it restricted to trusted users and protect it with authentication before external access. Deploy both Sentinel and its worker with `npm run docker:gpu` to install this feature.

@@ -243,6 +243,49 @@ main {
   font-size: 38px;
   margin: 0 0 5px;
 }
+.live-title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-bottom: 5px;
+}
+.live-title-row h1 { margin-bottom: 0; }
+.recorder-security {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-width: 100%;
+}
+.recorder-arm-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  font: 11px var(--mono);
+  border: 1px solid currentColor;
+  background: #252c2b;
+  color: var(--muted);
+}
+.recorder-arm-status.armed { color: #80e6a1; background: #163426; }
+.recorder-arm-status.disarmed { color: #ff9b9b; background: #471f25; }
+.recorder-arm-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 10px;
+  min-height: 36px;
+  border: 1px solid var(--muted);
+  color: var(--text);
+  background: transparent;
+  cursor: pointer;
+  font: 10px var(--mono);
+}
+.recorder-arm-toggle.armed { border-color: #cb7373; color: #ffb5b5; }
+.recorder-arm-toggle.disarmed { border-color: #65b782; color: #98ebaf; }
+.recorder-arm-toggle:disabled { opacity: .6; cursor: wait; }
+.recorder-arm-error { flex-basis: 100%; font: 10px var(--mono); color: #ffb5b5; max-width: 42ch; }
 .live-status {
   display: flex;
   align-items: center;
@@ -1195,6 +1238,25 @@ dd {
   font: 500 21px var(--display);
   margin: 3px 0;
 }
+.animal-controls-mobile-heading { display: none; }
+.animal-controls-body { display: block; }
+.animal-controls-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+.animal-controls-toggle svg { transition: transform .15s; }
+.controls-open .animal-controls-toggle svg { transform: rotate(180deg); }
 .animal-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.65fr) minmax(330px, 0.8fr);
@@ -1775,6 +1837,10 @@ dialog::backdrop {
   .animal-controls {
     padding-bottom: 24px;
   }
+  .animal-controls-desktop-heading { display: none; }
+  .animal-controls-mobile-heading { display: block; flex: 1; }
+  .animal-controls:not(.controls-open) { padding-bottom: 0; }
+  .animal-controls:not(.controls-open) .animal-controls-body { display: none; }
   .animal-detail-stats {
     padding: 0 10px;
     grid-template-columns: repeat(2, 1fr);

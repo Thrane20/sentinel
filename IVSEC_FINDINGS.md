@@ -355,3 +355,9 @@ Interpretation:
   - stream access will likely come from RTSP and/or ONVIF
   - richer metadata, playback, and analytics may be available from the web API
   - the web API likely needs a more faithful browser-session emulation than plain `curl`
+
+## Global disarming flag (18 October 2026)
+
+Read-only inspection confirmed `POST /API/AlarmConfig/Disarming/Range` and `/Get` using the authenticated Digest/session/CSRF flow. `/Get` returns `data.disarming` as a boolean, with `action`, `disarming_channel` and per-channel schedules. The inspected recorder reported false and selected all 16 channels.
+
+The vendor frontend saves to `/API/AlarmConfig/Disarming/Set` with `{"version":"1.0","data":<complete current configuration>}`. Sentinel preserves that configuration and changes only `disarming`, then confirms it through `/Get`. Live writes were not performed during development; the change and failure paths were tested against simulated recorder responses. The global flag is not an independent audit of every channel's arming schedule.

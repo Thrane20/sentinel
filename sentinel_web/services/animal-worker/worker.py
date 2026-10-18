@@ -15,6 +15,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import paho.mqtt.client as mqtt
 import requests
 from requests.auth import HTTPDigestAuth
+from recorder_security import RecorderSecurity, RecorderSecurityError, StateChanged
 
 CPU_MONITOR = CpuMonitor()
 
@@ -1030,6 +1031,9 @@ def ivsec_session():
     return base, session
 
 
+RECORDER_SECURITY = RecorderSecurity(ivsec_session, lambda: bool(IVSEC_USERNAME and IVSEC_PASSWORD))
+
+
 def ivsec_playback_params(camera_id, detected_at):
     """Build a short, read-only recorder download beginning before an event."""
     camera = next(
@@ -1272,6 +1276,12 @@ class Handler(BaseHTTPRequestHandler):
         return json.loads(self.rfile.read(length) or b"{}")
 
     def do_GET(self):
+        if self.path == "/ivsec-security":
+            try:
+                return self.send_json(200, RECORDER_SECURITY.read())
+            except (RecorderSecurityError, requests.RequestException, ValueError, RuntimeError):
+                return self.send_json(503, {"online": False, "armed": None, "disarming": None,
+                                            "error": "IVSEC status unavailable. Check recorder connectivity and credentials."})
         if self.path == "/system/cpu":
             return self.send_json(200, CPU_MONITOR.payload())
         if self.path.startswith("/quality/"):
@@ -1327,6 +1337,21 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(404, {"error": "Not found"})
 
     def do_PATCH(self):
+        if self.path == "/ivsec-security":
+            try:
+                body = self.read_json()
+                if not isinstance(body, dict) or set(body) != {"disarming", "expectedDisarming"} or any(type(body[key]) is not bool for key in body):
+                    raise ValueError("disarming and expectedDisarming must be booleans.")
+            except (ValueError, TypeError):
+                return self.send_json(400, {"error": "disarming and expectedDisarming must be booleans."})
+            try:
+                return self.send_json(200, RECORDER_SECURITY.write(body["disarming"], body["expectedDisarming"]))
+            except StateChanged as error:
+                return self.send_json(409, {"error": str(error)})
+            except RecorderSecurityError as error:
+                return self.send_json(503, {"error": str(error)})
+            except (requests.RequestException, ValueError, RuntimeError):
+                return self.send_json(503, {"error": "IVSEC did not confirm the change. Refresh its status before retrying."})
         if self.path != "/settings":
             return self.send_json(404, {"error": "Not found"})
         try:

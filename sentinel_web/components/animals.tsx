@@ -8,6 +8,7 @@ import {
   AlertTriangle,
   Bell,
   Check,
+  ChevronDown,
   Cpu,
   ExternalLink,
   PawPrint,
@@ -101,6 +102,7 @@ export function Animals({
   onOpenPlayback: (camera: Camera, detectedAt: number) => void;
 }) {
   const [settings, setSettings] = useState<Settings | null>(null);
+  const [controlsOpen, setControlsOpen] = useState(false);
   const [events, setEvents] = useState<Event[]>([]);
   const [selected, setSelected] = useState<Event | null>(null);
   const [error, setError] = useState("");
@@ -122,7 +124,6 @@ export function Animals({
       const eventData = (await eventsResponse.json()) as { events: Event[] };
       setEvents(eventData.events);
       setError("");
-
     } catch {
       setError("Animal detection services are not available yet.");
     }
@@ -146,18 +147,32 @@ export function Animals({
     let cancelled = false;
     async function openEvent() {
       try {
-        const response = await fetch(`/api/animals/events/${encodeURIComponent(eventId!)}`, { cache: "no-store", signal: controller.signal });
-        if (!response.ok) throw new Error(response.status === 404
-          ? "This event is no longer in Sentinel history. It may have been cleared or expired."
-          : "Could not load this event. Please retry the link.");
-        const result = await response.json() as Event;
+        const response = await fetch(
+          `/api/animals/events/${encodeURIComponent(eventId!)}`,
+          { cache: "no-store", signal: controller.signal },
+        );
+        if (!response.ok)
+          throw new Error(
+            response.status === 404
+              ? "This event is no longer in Sentinel history. It may have been cleared or expired."
+              : "Could not load this event. Please retry the link.",
+          );
+        const result = (await response.json()) as Event;
         if (!cancelled) setSelected(result);
       } catch (caught) {
-        if (!cancelled) setEventLinkError(caught instanceof Error ? caught.message : "Could not load this event.");
+        if (!cancelled)
+          setEventLinkError(
+            caught instanceof Error
+              ? caught.message
+              : "Could not load this event.",
+          );
       }
     }
     void openEvent();
-    return () => { cancelled = true; controller.abort(); };
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
   }, []);
 
   useEffect(() => {
@@ -174,11 +189,16 @@ export function Animals({
         body: JSON.stringify(body),
       });
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "The setting could not be saved.");
+      if (!response.ok)
+        throw new Error(result.error || "The setting could not be saved.");
       setSettings(result);
       setError("");
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "The setting could not be saved.");
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "The setting could not be saved.",
+      );
       await load();
     } finally {
       setSaving(false);
@@ -232,7 +252,9 @@ export function Animals({
         method: "POST",
       });
       if (!response.ok) throw new Error("Hourly counts could not be reset.");
-      setTestMessage("Hourly counts reset for all cameras. Existing events were kept.");
+      setTestMessage(
+        "Hourly counts reset for all cameras. Existing events were kept.",
+      );
       setError("");
     } catch {
       setError("Hourly counts could not be reset.");
@@ -344,9 +366,25 @@ export function Animals({
         </p>
       )}
 
-      {qualityCamera && <DetectionQualityEditor key={qualityCamera.id} camera={qualityCamera} onClose={() => setQualityCamera(null)} />}
-      {maskCamera && <AnimalMaskEditor key={maskCamera.id} camera={maskCamera} onClose={() => setMaskCamera(null)} />}
-      {eventLinkError && <p className="notice animal-notice" role="alert">{eventLinkError}</p>}
+      {qualityCamera && (
+        <DetectionQualityEditor
+          key={qualityCamera.id}
+          camera={qualityCamera}
+          onClose={() => setQualityCamera(null)}
+        />
+      )}
+      {maskCamera && (
+        <AnimalMaskEditor
+          key={maskCamera.id}
+          camera={maskCamera}
+          onClose={() => setMaskCamera(null)}
+        />
+      )}
+      {eventLinkError && (
+        <p className="notice animal-notice" role="alert">
+          {eventLinkError}
+        </p>
+      )}
       <div className="animal-layout">
         <section className="panel animal-events">
           <div className="panel-heading">
@@ -411,311 +449,380 @@ export function Animals({
           )}
         </section>
 
-        <section className="panel animal-controls">
+        <section
+          className={`panel animal-controls${controlsOpen ? " controls-open" : ""}`}
+        >
           <div className="panel-heading">
-            <h2>
+            <h2 className="animal-controls-desktop-heading">
               <span className="slash">{"//"}</span> Watch controls
+            </h2>
+            <h2 className="animal-controls-mobile-heading">
+              <button
+                className="animal-controls-toggle"
+                aria-expanded={controlsOpen}
+                aria-controls="animal-watch-controls"
+                onClick={() => setControlsOpen((open) => !open)}
+              >
+                <span>
+                  <span className="slash">{"//"}</span> Watch controls
+                </span>
+                <ChevronDown size={18} aria-hidden="true" />
+              </button>
             </h2>
             <span className="tag">ALWAYS ON</span>
           </div>
-          <label className="switch-row">
-            <span>
-              <strong>Animal detection</strong>
-              <small>All enabled cameras</small>
-            </span>
-            <input
-              type="checkbox"
-              checked={settings?.globalEnabled || false}
-              disabled={!settings || saving}
-              onChange={(event) =>
-                void patch({ globalEnabled: event.target.checked })
-              }
-            />
-            <i />
-          </label>
-          <label className="switch-row">
-            <span>
-              <strong>Send alerts</strong>
-              <small>
-                {health?.alertsConfigured
-                  ? "Home Assistant webhook"
-                  : "Configure webhook first"}
-              </small>
-            </span>
-            <input
-              type="checkbox"
-              checked={settings?.alertsEnabled || false}
-              disabled={!settings || saving || !health?.alertsConfigured}
-              onChange={(event) =>
-                void patch({ alertsEnabled: event.target.checked })
-              }
-            />
-            <i />
-          </label>
-          <label className="switch-row">
-            <span>
-              <strong>Maximum events per hour</strong>
-              <small>Per camera, rolling hour. 0 = unlimited. Excess events are discarded.</small>
-            </span>
-            <input
-              aria-label="Maximum animal events per hour"
-              type="number"
-              min="0"
-              max="10000"
-              step="1"
-              style={{ width: "5rem", position: "static", opacity: 1, flexShrink: 0 }}
-              disabled={!settings || saving}
-              defaultValue={settings?.maxEventsPerHour ?? 20}
-              key={settings?.maxEventsPerHour ?? 20}
-              onBlur={(event) => {
-                if (event.target.checkValidity())
-                  void patch({ maxEventsPerHour: Number(event.target.value) });
-              }}
-            />
-          </label>
-          <button
-            className="animal-clear"
-            disabled={!settings || resettingHourlyCounts || clearing}
-            onClick={() => void resetHourlyCounts()}
-          >
-            <RefreshCw size={13} />
-            {resettingHourlyCounts ? "Resetting…" : "Reset hourly counts"}
-          </button>
-          <div className="switch-row">
-            <span>
-              <strong>Frigate confidence</strong>
-              <small>Updates Frigate and Sentinel live. Lower values accept more detections.</small>
-            </span>
-          </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", padding: "12px 0" }}>
-            <input
-              aria-label="Confidence for all cameras"
-              type="number"
-              min="10"
-              max="99"
-              step="1"
-              value={globalConfidence}
-              onChange={(event) => setGlobalConfidence(Number(event.target.value))}
-              style={{ width: "4rem" }}
-            />
-            <span>%</span>
+          <div className="animal-controls-body" id="animal-watch-controls">
+            <label className="switch-row">
+              <span>
+                <strong>Animal detection</strong>
+                <small>All enabled cameras</small>
+              </span>
+              <input
+                type="checkbox"
+                checked={settings?.globalEnabled || false}
+                disabled={!settings || saving}
+                onChange={(event) =>
+                  void patch({ globalEnabled: event.target.checked })
+                }
+              />
+              <i />
+            </label>
+            <label className="switch-row">
+              <span>
+                <strong>Send alerts</strong>
+                <small>
+                  {health?.alertsConfigured
+                    ? "Home Assistant webhook"
+                    : "Configure webhook first"}
+                </small>
+              </span>
+              <input
+                type="checkbox"
+                checked={settings?.alertsEnabled || false}
+                disabled={!settings || saving || !health?.alertsConfigured}
+                onChange={(event) =>
+                  void patch({ alertsEnabled: event.target.checked })
+                }
+              />
+              <i />
+            </label>
+            <label className="switch-row">
+              <span>
+                <strong>Maximum events per hour</strong>
+                <small>
+                  Per camera, rolling hour. 0 = unlimited. Excess events are
+                  discarded.
+                </small>
+              </span>
+              <input
+                aria-label="Maximum animal events per hour"
+                type="number"
+                min="0"
+                max="10000"
+                step="1"
+                style={{
+                  width: "5rem",
+                  position: "static",
+                  opacity: 1,
+                  flexShrink: 0,
+                }}
+                disabled={!settings || saving}
+                defaultValue={settings?.maxEventsPerHour ?? 20}
+                key={settings?.maxEventsPerHour ?? 20}
+                onBlur={(event) => {
+                  if (event.target.checkValidity())
+                    void patch({
+                      maxEventsPerHour: Number(event.target.value),
+                    });
+                }}
+              />
+            </label>
             <button
               className="animal-clear"
-              disabled={!settings || saving || globalConfidence < 10 || globalConfidence > 99}
-              onClick={() => void patch({ cameras: Object.fromEntries(
-                cameras.filter((camera) => camera.seen).map((camera) =>
-                  [camera.id, { threshold: globalConfidence / 100 }],
-                ),
-              ) })}
-            >Apply to all cameras</button>
+              disabled={!settings || resettingHourlyCounts || clearing}
+              onClick={() => void resetHourlyCounts()}
+            >
+              <RefreshCw size={13} />
+              {resettingHourlyCounts ? "Resetting…" : "Reset hourly counts"}
+            </button>
+            <div className="switch-row">
+              <span>
+                <strong>Frigate confidence</strong>
+                <small>
+                  Updates Frigate and Sentinel live. Lower values accept more
+                  detections.
+                </small>
+              </span>
+            </div>
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                alignItems: "center",
+                flexWrap: "wrap",
+                padding: "12px 0",
+              }}
+            >
+              <input
+                aria-label="Confidence for all cameras"
+                type="number"
+                min="10"
+                max="99"
+                step="1"
+                value={globalConfidence}
+                onChange={(event) =>
+                  setGlobalConfidence(Number(event.target.value))
+                }
+                style={{ width: "4rem" }}
+              />
+              <span>%</span>
+              <button
+                className="animal-clear"
+                disabled={
+                  !settings ||
+                  saving ||
+                  globalConfidence < 10 ||
+                  globalConfidence > 99
+                }
+                onClick={() =>
+                  void patch({
+                    cameras: Object.fromEntries(
+                      cameras
+                        .filter((camera) => camera.seen)
+                        .map((camera) => [
+                          camera.id,
+                          { threshold: globalConfidence / 100 },
+                        ]),
+                    ),
+                  })
+                }
+              >
+                Apply to all cameras
+              </button>
+            </div>
+            <div className="camera-detection-list">
+              {cameras.map((camera) => {
+                const cameraSettings = settings?.cameras[camera.id];
+                return (
+                  <div className="camera-detection" key={camera.id}>
+                    <label className="switch-row compact">
+                      <span>
+                        <strong>
+                          CH {camera.id} / {camera.name}
+                        </strong>
+                        <small>
+                          {camera.seen
+                            ? "Camera available"
+                            : "Previously offline"}
+                        </small>
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={cameraSettings?.enabled || false}
+                        disabled={!settings || saving || !camera.seen}
+                        onChange={(event) =>
+                          void patch({
+                            cameras: {
+                              [camera.id]: { enabled: event.target.checked },
+                            },
+                          })
+                        }
+                      />
+                      <i />
+                    </label>
+                    {cameraSettings && camera.seen && (
+                      <button
+                        className="animal-clear"
+                        onClick={() => setQualityCamera(camera)}
+                      >
+                        Detection quality / {camera.name}
+                      </button>
+                    )}
+                    {cameraSettings && camera.seen && (
+                      <button
+                        className="animal-clear"
+                        onClick={() => setMaskCamera(camera)}
+                      >
+                        Edit masks / {camera.name}
+                      </button>
+                    )}
+                    {cameraSettings && (
+                      <div className="camera-tuning">
+                        <label>
+                          FRIGATE CONF.
+                          <input
+                            aria-label={`${camera.name} confidence`}
+                            type="number"
+                            min="10"
+                            disabled={!camera.seen || saving}
+                            max="99"
+                            value={Math.round(cameraSettings.threshold * 100)}
+                            onChange={(event) =>
+                              setSettings((current) =>
+                                current
+                                  ? {
+                                      ...current,
+                                      cameras: {
+                                        ...current.cameras,
+                                        [camera.id]: {
+                                          ...cameraSettings,
+                                          threshold:
+                                            Number(event.target.value) / 100,
+                                        },
+                                      },
+                                    }
+                                  : current,
+                              )
+                            }
+                            onBlur={(event) => {
+                              if (event.target.checkValidity())
+                                void patch({
+                                  cameras: {
+                                    [camera.id]: {
+                                      threshold:
+                                        Number(event.target.value) / 100,
+                                    },
+                                  },
+                                });
+                            }}
+                          />
+                          <span>%</span>
+                        </label>
+                        <label>
+                          MIN AREA
+                          <input
+                            aria-label={`${camera.name} minimum area`}
+                            type="number"
+                            min="0.01"
+                            max="25"
+                            step="0.01"
+                            value={Number(
+                              (cameraSettings.minArea * 100).toFixed(2),
+                            )}
+                            onChange={(event) =>
+                              setSettings((current) =>
+                                current
+                                  ? {
+                                      ...current,
+                                      cameras: {
+                                        ...current.cameras,
+                                        [camera.id]: {
+                                          ...cameraSettings,
+                                          minArea:
+                                            Number(event.target.value) / 100,
+                                        },
+                                      },
+                                    }
+                                  : current,
+                              )
+                            }
+                            onBlur={(event) =>
+                              void patch({
+                                cameras: {
+                                  [camera.id]: {
+                                    minArea: Number(event.target.value) / 100,
+                                  },
+                                },
+                              })
+                            }
+                          />
+                          <span>%</span>
+                        </label>
+                        <label>
+                          MAX AREA
+                          <input
+                            aria-label={`${camera.name} maximum area`}
+                            type="number"
+                            min="0.1"
+                            max="99"
+                            step="0.1"
+                            value={Number(
+                              (cameraSettings.maxArea * 100).toFixed(1),
+                            )}
+                            onChange={(event) =>
+                              setSettings((current) =>
+                                current
+                                  ? {
+                                      ...current,
+                                      cameras: {
+                                        ...current.cameras,
+                                        [camera.id]: {
+                                          ...cameraSettings,
+                                          maxArea:
+                                            Number(event.target.value) / 100,
+                                        },
+                                      },
+                                    }
+                                  : current,
+                              )
+                            }
+                            onBlur={(event) =>
+                              void patch({
+                                cameras: {
+                                  [camera.id]: {
+                                    maxArea: Number(event.target.value) / 100,
+                                  },
+                                },
+                              })
+                            }
+                          />
+                          <span>%</span>
+                        </label>
+                        <label>
+                          MIN MOVE
+                          <input
+                            aria-label={`${camera.name} minimum movement`}
+                            type="number"
+                            min="0"
+                            max="25"
+                            step="0.5"
+                            value={Number(
+                              (cameraSettings.minTravel * 100).toFixed(1),
+                            )}
+                            onChange={(event) =>
+                              setSettings((current) =>
+                                current
+                                  ? {
+                                      ...current,
+                                      cameras: {
+                                        ...current.cameras,
+                                        [camera.id]: {
+                                          ...cameraSettings,
+                                          minTravel:
+                                            Number(event.target.value) / 100,
+                                        },
+                                      },
+                                    }
+                                  : current,
+                              )
+                            }
+                            onBlur={(event) =>
+                              void patch({
+                                cameras: {
+                                  [camera.id]: {
+                                    minTravel: Number(event.target.value) / 100,
+                                  },
+                                },
+                              })
+                            }
+                          />
+                          <span>%</span>
+                        </label>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <button
+              className="secondary animal-test"
+              disabled={testing || !health?.alertsConfigured}
+              onClick={() => void testAlert()}
+            >
+              <Bell size={15} /> {testing ? "Sending…" : "Send test alert"}
+            </button>
+            {testMessage && <p className="muted">{testMessage}</p>}
           </div>
-          <div className="camera-detection-list">
-            {cameras.map((camera) => {
-              const cameraSettings = settings?.cameras[camera.id];
-              return (
-                <div className="camera-detection" key={camera.id}>
-                  <label className="switch-row compact">
-                    <span>
-                      <strong>
-                        CH {camera.id} / {camera.name}
-                      </strong>
-                      <small>
-                        {camera.seen
-                          ? "Camera available"
-                          : "Previously offline"}
-                      </small>
-                    </span>
-                    <input
-                      type="checkbox"
-                      checked={cameraSettings?.enabled || false}
-                      disabled={!settings || saving || !camera.seen}
-                      onChange={(event) =>
-                        void patch({
-                          cameras: {
-                            [camera.id]: { enabled: event.target.checked },
-                          },
-                        })
-                      }
-                    />
-                    <i />
-                  </label>
-                  {cameraSettings && camera.seen && <button className="animal-clear" onClick={() => setQualityCamera(camera)}>
-                    Detection quality / {camera.name}
-                  </button>}
-                  {cameraSettings && camera.seen && <button className="animal-clear" onClick={() => setMaskCamera(camera)}>
-                    Edit masks / {camera.name}
-                  </button>}
-                  {cameraSettings && (
-                    <div className="camera-tuning">
-                      <label>
-                        FRIGATE CONF.
-                        <input
-                          aria-label={`${camera.name} confidence`}
-                          type="number"
-                          min="10"
-                          disabled={!camera.seen || saving}
-                          max="99"
-                          value={Math.round(cameraSettings.threshold * 100)}
-                          onChange={(event) =>
-                            setSettings((current) =>
-                              current
-                                ? {
-                                    ...current,
-                                    cameras: {
-                                      ...current.cameras,
-                                      [camera.id]: {
-                                        ...cameraSettings,
-                                        threshold:
-                                          Number(event.target.value) / 100,
-                                      },
-                                    },
-                                  }
-                                : current,
-                            )
-                          }
-                          onBlur={(event) => {
-                            if (event.target.checkValidity())
-                              void patch({ cameras: { [camera.id]: {
-                                threshold: Number(event.target.value) / 100,
-                              } } });
-                          }}
-                        />
-                        <span>%</span>
-                      </label>
-                      <label>
-                        MIN AREA
-                        <input
-                          aria-label={`${camera.name} minimum area`}
-                          type="number"
-                          min="0.01"
-                          max="25"
-                          step="0.01"
-                          value={Number(
-                            (cameraSettings.minArea * 100).toFixed(2),
-                          )}
-                          onChange={(event) =>
-                            setSettings((current) =>
-                              current
-                                ? {
-                                    ...current,
-                                    cameras: {
-                                      ...current.cameras,
-                                      [camera.id]: {
-                                        ...cameraSettings,
-                                        minArea:
-                                          Number(event.target.value) / 100,
-                                      },
-                                    },
-                                  }
-                                : current,
-                            )
-                          }
-                          onBlur={(event) =>
-                            void patch({
-                              cameras: {
-                                [camera.id]: {
-                                  minArea: Number(event.target.value) / 100,
-                                },
-                              },
-                            })
-                          }
-                        />
-                        <span>%</span>
-                      </label>
-                      <label>
-                        MAX AREA
-                        <input
-                          aria-label={`${camera.name} maximum area`}
-                          type="number"
-                          min="0.1"
-                          max="99"
-                          step="0.1"
-                          value={Number(
-                            (cameraSettings.maxArea * 100).toFixed(1),
-                          )}
-                          onChange={(event) =>
-                            setSettings((current) =>
-                              current
-                                ? {
-                                    ...current,
-                                    cameras: {
-                                      ...current.cameras,
-                                      [camera.id]: {
-                                        ...cameraSettings,
-                                        maxArea:
-                                          Number(event.target.value) / 100,
-                                      },
-                                    },
-                                  }
-                                : current,
-                            )
-                          }
-                          onBlur={(event) =>
-                            void patch({
-                              cameras: {
-                                [camera.id]: {
-                                  maxArea: Number(event.target.value) / 100,
-                                },
-                              },
-                            })
-                          }
-                        />
-                        <span>%</span>
-                      </label>
-                      <label>
-                        MIN MOVE
-                        <input
-                          aria-label={`${camera.name} minimum movement`}
-                          type="number"
-                          min="0"
-                          max="25"
-                          step="0.5"
-                          value={Number(
-                            (cameraSettings.minTravel * 100).toFixed(1),
-                          )}
-                          onChange={(event) =>
-                            setSettings((current) =>
-                              current
-                                ? {
-                                    ...current,
-                                    cameras: {
-                                      ...current.cameras,
-                                      [camera.id]: {
-                                        ...cameraSettings,
-                                        minTravel:
-                                          Number(event.target.value) / 100,
-                                      },
-                                    },
-                                  }
-                                : current,
-                            )
-                          }
-                          onBlur={(event) =>
-                            void patch({
-                              cameras: {
-                                [camera.id]: {
-                                  minTravel: Number(event.target.value) / 100,
-                                },
-                              },
-                            })
-                          }
-                        />
-                        <span>%</span>
-                      </label>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-          <button
-            className="secondary animal-test"
-            disabled={testing || !health?.alertsConfigured}
-            onClick={() => void testAlert()}
-          >
-            <Bell size={15} /> {testing ? "Sending…" : "Send test alert"}
-          </button>
-          {testMessage && <p className="muted">{testMessage}</p>}
         </section>
       </div>
 
