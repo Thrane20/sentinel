@@ -2141,3 +2141,17 @@ dialog::backdrop {
 .mask-loading { position: absolute; inset: 0; display: grid; place-items: center; }
 .mask-actions button[aria-pressed="true"] { border-color: var(--yellow); color: var(--yellow); }
 @media (max-width: 600px) { .mask-editor { padding: 12px; } .mask-editor h2 { font-size: 20px; } }
+
+.quality-editor { max-width: 680px; }
+.quality-fields { display: grid; gap: 16px; margin: 20px 0; }
+.quality-fields label { display: grid; gap: 8px; font-size: 13px; }
+.quality-fields select { min-width: 0; max-width: 100%; width: 100%; padding: 10px; background: #101819; color: var(--text); border: 1px solid var(--line); }
+
+.snapshot-fallback { position: absolute; right: 8px; top: 34px; z-index: 2; padding: 3px 5px; background: #101819e6; color: var(--yellow); font-size: 8px; letter-spacing: .04em; pointer-events: auto; }
+
+.cpu-activity { margin-bottom: 20px; }
+.cpu-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; padding: 18px 0; }
+.cpu-metrics span { display: block; color: var(--muted); font-size: 12px; }
+.cpu-metrics strong { display: block; color: var(--cyan); font-size: clamp(28px, 5vw, 42px); padding: 8px 0; }
+.cpu-metrics meter { width: 100%; height: 12px; accent-color: var(--cyan); }
+.cpu-activity > p { font-size: 11px; line-height: 1.6; }

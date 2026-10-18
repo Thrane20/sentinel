@@ -22,6 +22,9 @@ class AnimalWorkerTests(unittest.TestCase):
         confidence_patch = patch.object(worker, "apply_frigate_confidence")
         self.mock_confidence = confidence_patch.start()
         self.addCleanup(confidence_patch.stop)
+        frame_patch = patch.object(worker, "detection_frame_size", return_value=(640, 360))
+        self.mock_frame_size = frame_patch.start()
+        self.addCleanup(frame_patch.stop)
 
     def tearDown(self):
         self.directory.cleanup()
@@ -175,6 +178,56 @@ class AnimalWorkerTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 worker.validate_object_masks(invalid)
 
+    def test_resolution_independent_box_normalization(self):
+        for width,height in ((640,360),(1280,720),(1920,1080)):
+            self.mock_frame_size.return_value = (width,height)
+            self.assertEqual(worker.normalize_box([width*.1,height*.2,width*.3,height*.5], "ch05"),
+                             [0.1,0.2,0.2,0.3])
+        self.assertEqual(worker.normalize_box([0.1,0.2,0.3,0.5], "ch05"), [0.1,0.2,0.2,0.3])
+
+    def test_detection_quality_updates_source_dimensions_persists_and_restarts(self):
+        from unittest.mock import MagicMock
+        def response(body):
+            result=MagicMock();result.__enter__.return_value=io.StringIO(json.dumps(body));return result
+        previous={"profile":"360p","width":640,"height":360,"fps":2,"stream":"2","inputIndex":0}
+        before=worker.settings()
+        with patch.object(worker, "detection_quality", return_value=previous), patch.dict(os.environ, {"IVSEC_USERNAME":"test-user", "IVSEC_PASSWORD":"test-password"}), patch.object(worker.urllib.request, "urlopen", side_effect=[response({"cameras":{"ch05":{"ffmpeg":{"inputs":[{"path":"rtsp://redacted/ch05/2","input_args":"preset-rtsp-generic","roles":["detect"]}]}}}}),response({"success":True}),response({"success":True})]) as request:
+            result=worker.save_detection_quality("05", {"profile":"720p","fps":2})
+            body=json.loads(request.call_args_list[1].args[0].data)
+            camera=body["config_data"]["cameras"]["ch05"]
+            self.assertEqual(camera["detect"],{"width":1280,"height":720,"fps":2})
+            self.assertTrue(camera["ffmpeg"]["inputs"][0]["path"].endswith("/ch05/0"))
+            self.assertTrue(result["restartRequested"])
+            self.assertTrue(request.call_args_list[2].args[0].full_url.endswith("/api/restart"))
+        saved=worker.settings()["cameras"]["05"]
+        self.assertEqual(saved["detectionProfile"],"720p")
+        self.assertEqual(saved["detectionFps"],2)
+        self.assertEqual(saved["minTravel"],before["cameras"]["05"]["minTravel"])
+        worker.initialize()
+        self.assertEqual(worker.settings()["cameras"]["05"]["detectionProfile"],"720p")
+        for invalid in ({"profile":"4k","fps":2},{"profile":"720p","fps":30},{"profile":"720p","fps":True}):
+            with self.assertRaises(ValueError):worker.save_detection_quality("05",invalid)
+
+    def test_quality_failure_rolls_back_and_restart_failure_is_reported(self):
+        from unittest.mock import MagicMock
+        def response(body):
+            result=MagicMock();result.__enter__.return_value=io.StringIO(json.dumps(body));return result
+        inputs={"cameras":{"ch05":{"ffmpeg":{"inputs":[{"path":"rtsp://redacted/ch05/2","roles":["detect"]}]}}}}
+        previous={"profile":"360p","width":640,"height":360,"fps":2,"stream":"2","inputIndex":0}
+        before=worker.settings()
+        with patch.object(worker, "detection_quality", return_value=previous), patch.dict(os.environ, {"IVSEC_USERNAME":"test-user", "IVSEC_PASSWORD":"test-password"}):
+            with patch.object(worker.urllib.request,"urlopen",side_effect=[response(inputs),OSError("offline"),response(inputs),response({"success":True})]) as request:
+                with self.assertRaisesRegex(ValueError,"Original configuration restored"):
+                    worker.save_detection_quality("05",{"profile":"1080p","fps":5})
+                restored=json.loads(request.call_args.args[0].data)["config_data"]["cameras"]["ch05"]
+                self.assertEqual(restored["detect"]["width"],640)
+                self.assertTrue(restored["ffmpeg"]["inputs"][0]["path"].endswith("/2"))
+            self.assertEqual(worker.settings(),before)
+            with patch.object(worker.urllib.request,"urlopen",side_effect=[response(inputs),response({"success":True}),OSError("restart failed")]):
+                saved=worker.save_detection_quality("05",{"profile":"720p","fps":2})
+                self.assertFalse(saved["restartRequested"])
+                self.assertIn("automatic restart failed",saved["message"])
+
     def test_frigate_event_is_retained_in_shadow_mode(self):
         payload = {
             "type": "new",
@@ -301,6 +354,20 @@ class AnimalWorkerTests(unittest.TestCase):
         with worker.connect() as db:
             row = db.execute("SELECT * FROM events WHERE id='stationary-event'").fetchone()
         self.assertIsNone(row)
+
+    def test_webhook_links_preserve_camera_time_and_public_origin(self):
+        row={"id":"older event&x/1", "camera":"ch05", "started_at":1792284000.75,
+             "confidence":0.85,"box":"[0.1,0.1,0.2,0.2]","travel":0}
+        with patch.object(worker,"PUBLIC_URL","https://sentinel.example.com"):
+            body=worker.alert_body(row)
+        url=worker.urllib.parse.urlsplit(body["playbackUrl"])
+        params=worker.urllib.parse.parse_qs(url.query)
+        self.assertEqual(url.scheme,"https")
+        self.assertEqual(url.netloc,"sentinel.example.com")
+        self.assertEqual(params,{"tab":["animals"],"event":[row["id"]],"playback":["1"],"camera":["05"],"at":["1792284000"]})
+        self.assertIn("older%20event%26x%2F1/snapshot",body["snapshotUrl"])
+        self.assertNotIn("playback=",body["sentinelUrl"])
+        self.assertEqual(worker.alert_body(row,test=True)["type"],"sentinel.animal.test")
 
     def test_delivery_retries_and_persists_success(self):
         now = time.time()

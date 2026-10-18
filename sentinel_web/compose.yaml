@@ -85,7 +85,6 @@ services:
       FRIGATE_URL: http://frigate:5000
       FRIGATE_OPENVINO_DEVICE: ${FRIGATE_OPENVINO_DEVICE:-AUTO}
       ANIMAL_DB_PATH: /data/animals.db
-      SENTINEL_PUBLIC_URL: ${SENTINEL_PUBLIC_URL:-http://localhost:3000}
     depends_on:
       mqtt:
         condition: service_healthy

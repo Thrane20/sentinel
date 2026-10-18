@@ -28,6 +28,8 @@ import { cameras, type Camera } from "@/lib/cameras";
 import { Player } from "./player";
 import { RecordedPlayer } from "./recorded-player";
 import { Snapshot } from "./snapshot";
+import { CpuActivity } from "./cpu-activity";
+import { parsePlaybackLink } from "@/lib/playback-link";
 import { Animals, type AnimalHealth } from "./animals";
 import { IvsecEvents } from "./ivsec-events";
 type Tab = "live" | "animals" | "playback" | "system";
@@ -68,6 +70,7 @@ export function Console() {
     name: string;
   } | null>(null);
   const [clipError, setClipError] = useState(false);
+  const [playbackLinkError, setPlaybackLinkError] = useState("");
   const [time, setTime] = useState("LOCAL NETWORK");
   const [refreshing, setRefreshing] = useState(true);
   const dialog = useRef<HTMLDialogElement>(null);
@@ -92,13 +95,27 @@ export function Console() {
     // Health state is updated only after the asynchronous network request resolves.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void refresh();
-    const requestedTab = new URLSearchParams(window.location.search).get("tab");
-    if (requestedTab === "animals") setTab("animals");
+    function openLink() {
+      const params = new URLSearchParams(window.location.search);
+      const link = parsePlaybackLink(window.location.search);
+      if (params.get("tab") === "animals" || link.kind !== "none") setTab("animals");
+      if (link.kind === "invalid") {
+        setPlaybackLinkError("This playback link is invalid. It needs a known camera and a valid detection time.");
+      } else if (link.kind === "playback") {
+        setPlaybackLinkError("");
+        setPlaybackAt(link.at);
+        setCameraMode("recorded");
+        setStreamState("Loading recording");
+        setSelected(link.camera);
+      }
+    }
+    openLink();
+    window.addEventListener("popstate", openLink);
     const timer = setInterval(() => {
       setTime(new Date().toLocaleTimeString("en-AU", { hour12: false }));
       if (!document.hidden) setSnapshotTick(Date.now());
     }, 1000);
-    return () => clearInterval(timer);
+    return () => { clearInterval(timer); window.removeEventListener("popstate", openLink); };
   }, [refresh]);
   useEffect(() => {
     if (selected) dialog.current?.showModal();
@@ -202,6 +219,7 @@ export function Console() {
           </div>
         </header>
         <main>
+          {playbackLinkError && <p className="notice" role="alert">{playbackLinkError}</p>}
           {(tab === "playback" || tab === "system") && (
             <div className="page-heading">
               <div>
@@ -518,6 +536,7 @@ export function Console() {
           )}
           {tab === "system" && (
             <>
+              <CpuActivity />
               <div className="system-grid">
                 <section className="panel">
                   <div className="panel-heading">

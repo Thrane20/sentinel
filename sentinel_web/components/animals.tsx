@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { DetectionQualityEditor } from "./detection-quality-editor";
 import { AnimalMaskEditor } from "./animal-mask-editor";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -103,6 +104,7 @@ export function Animals({
   const [events, setEvents] = useState<Event[]>([]);
   const [selected, setSelected] = useState<Event | null>(null);
   const [error, setError] = useState("");
+  const [eventLinkError, setEventLinkError] = useState("");
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [clearing, setClearing] = useState(false);
@@ -120,13 +122,7 @@ export function Animals({
       const eventData = (await eventsResponse.json()) as { events: Event[] };
       setEvents(eventData.events);
       setError("");
-      const requested = new URLSearchParams(window.location.search).get(
-        "event",
-      );
-      if (requested)
-        setSelected(
-          eventData.events.find((event) => event.id === requested) || null,
-        );
+
     } catch {
       setError("Animal detection services are not available yet.");
     }
@@ -141,6 +137,28 @@ export function Animals({
     }, 10000);
     return () => window.clearInterval(timer);
   }, [load]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const eventId = params.get("event");
+    if (!eventId || params.has("playback")) return;
+    const controller = new AbortController();
+    let cancelled = false;
+    async function openEvent() {
+      try {
+        const response = await fetch(`/api/animals/events/${encodeURIComponent(eventId!)}`, { cache: "no-store", signal: controller.signal });
+        if (!response.ok) throw new Error(response.status === 404
+          ? "This event is no longer in Sentinel history. It may have been cleared or expired."
+          : "Could not load this event. Please retry the link.");
+        const result = await response.json() as Event;
+        if (!cancelled) setSelected(result);
+      } catch (caught) {
+        if (!cancelled) setEventLinkError(caught instanceof Error ? caught.message : "Could not load this event.");
+      }
+    }
+    void openEvent();
+    return () => { cancelled = true; controller.abort(); };
+  }, []);
 
   useEffect(() => {
     if (selected) dialog.current?.showModal();
@@ -201,6 +219,7 @@ export function Animals({
     }
   }
 
+  const [qualityCamera, setQualityCamera] = useState<Camera | null>(null);
   const [maskCamera, setMaskCamera] = useState<Camera | null>(null);
   const [globalConfidence, setGlobalConfidence] = useState(65);
   const [resettingHourlyCounts, setResettingHourlyCounts] = useState(false);
@@ -325,7 +344,9 @@ export function Animals({
         </p>
       )}
 
+      {qualityCamera && <DetectionQualityEditor key={qualityCamera.id} camera={qualityCamera} onClose={() => setQualityCamera(null)} />}
       {maskCamera && <AnimalMaskEditor key={maskCamera.id} camera={maskCamera} onClose={() => setMaskCamera(null)} />}
+      {eventLinkError && <p className="notice animal-notice" role="alert">{eventLinkError}</p>}
       <div className="animal-layout">
         <section className="panel animal-events">
           <div className="panel-heading">
@@ -518,6 +539,9 @@ export function Animals({
                     />
                     <i />
                   </label>
+                  {cameraSettings && camera.seen && <button className="animal-clear" onClick={() => setQualityCamera(camera)}>
+                    Detection quality / {camera.name}
+                  </button>}
                   {cameraSettings && camera.seen && <button className="animal-clear" onClick={() => setMaskCamera(camera)}>
                     Edit masks / {camera.name}
                   </button>}
