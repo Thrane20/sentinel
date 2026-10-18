@@ -8,6 +8,7 @@
     "start": "node --env-file-if-exists=.env.local scripts/start.mjs",
     "docker": "node scripts/docker-up.mjs",
     "docker:gpu": "node scripts/docker-up.mjs --gpu",
+    "docker:cpu": "node scripts/docker-up.mjs --cpu",
     "docker:detector-check": "docker compose exec -T frigate python3 - < scripts/check-detector.py",
     "docker:foreground": "node scripts/docker-up.mjs --foreground",
     "docker:check": "docker compose exec sentinel sh -c 'ffmpeg -version | head -n 1 && node -e \"fetch(\\\"http://127.0.0.1:3000/api/health\\\").then(async response => { console.log(await response.text()); if (!response.ok) process.exit(1) })\"'",
