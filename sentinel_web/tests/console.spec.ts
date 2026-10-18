@@ -268,6 +268,16 @@ test("animal event cards and controls render from the local service", async ({
   await page.goto("/?tab=animals");
   await expect(page.getByText("Front Drive", { exact: true })).toBeVisible();
   await expect(page.getByText("91% MATCH")).toBeVisible();
+  const watchToggle = page.getByRole("button", { name: /Watch controls/ });
+  await expect(watchToggle).toHaveAttribute("aria-expanded", "false");
+  await expect(page.getByLabel("Maximum animal events per hour")).toBeHidden();
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await expect(page.getByLabel("Maximum animal events per hour")).toBeVisible();
+  await expect(watchToggle).toBeHidden();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByLabel("Maximum animal events per hour")).toBeHidden();
+  await watchToggle.click();
+  await expect(watchToggle).toHaveAttribute("aria-expanded", "true");
   const hourlyLimit = page.getByLabel("Maximum animal events per hour");
   await expect(hourlyLimit).toBeVisible();
   await expect(hourlyLimit).toHaveValue("20");
