@@ -1,0 +1,41 @@
+# Optional example. Adjust the overnight time window before enabling.
+# Listen to sentinel_ivsec, not sentinel_ivsec_test.
+alias: Sentinel garage intrusion notification
+mode: queued
+max: 10
+triggers:
+  - trigger: event
+    event_type: sentinel_ivsec
+    event_data:
+      notification_id: garage_intrusion
+      camera_id: "04"
+      event_key: perimeter_intrusion
+actions:
+  - choose:
+      - conditions:
+          - condition: time
+            after: "22:00:00"
+            before: "07:00:00"
+        sequence:
+          - action: notify.mobile_app_ians_iphone
+            data:
+              title: Garage perimeter intrusion
+              message: "{{ trigger.event.data.message }}"
+              data:
+                url: "{{ trigger.event.data.playback_url }}"
+                tag: "{{ trigger.event.data.delivery_id }}"
+                push:
+                  sound:
+                    name: default
+                    critical: 1
+                    volume: 1.0
+    default:
+      - action: notify.mobile_app_ians_iphone
+        data:
+          title: Garage activity
+          message: "{{ trigger.event.data.message }}"
+          data:
+            url: "{{ trigger.event.data.playback_url }}"
+            tag: "{{ trigger.event.data.delivery_id }}"
+            push:
+              sound: default

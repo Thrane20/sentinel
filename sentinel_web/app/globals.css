@@ -1238,6 +1238,29 @@ dd {
   font: 500 21px var(--display);
   margin: 3px 0;
 }
+.ivsec-event-entry { display: flex; align-items: stretch; min-width: 0; }
+.ivsec-event-entry .ivsec-alert-row { flex: 1; min-width: 0; }
+.ivsec-inspect-button { border: 1px solid var(--line); background: #182224; color: var(--cyan); font: 10px var(--mono); padding: 8px; cursor: pointer; }
+.ivsec-routing { padding: 18px; border-top: 1px solid var(--line); }
+.ivsec-routing summary { cursor: pointer; font: 16px var(--display); padding: 8px 0; }
+.ivsec-routing summary span { color: var(--cyan); margin-left: 8px; }
+.ivsec-routing p { color: var(--muted); font-size: 12px; line-height: 1.6; }
+.ivsec-rule-form { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,240px),1fr)); gap: 14px; padding: 16px 0; }
+.ivsec-rule-form label { display: flex; flex-direction: column; gap: 7px; font: 11px var(--mono); min-width: 0; }
+.ivsec-rule-form input:not([type=checkbox]), .ivsec-rule-form select { width: 100%; min-width: 0; border: 1px solid var(--line); padding: 10px; color: var(--text); background: #121a1c; font: 12px var(--mono); }
+.ivsec-rule-form .ivsec-rule-enabled { flex-direction: row; align-items: center; }
+.ivsec-rule-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; border-bottom: 1px solid var(--line); padding: 12px 0; overflow-wrap: anywhere; }
+.ivsec-rule-row > div { flex: 1; min-width: 160px; }
+.ivsec-rule-row small { display: block; color: var(--muted); margin-top: 5px; font: 10px var(--mono); }
+.ivsec-inspector { width: min(760px,96vw); max-height: 90dvh; padding: 0; border: 1px solid var(--line); background: #10181b; color: var(--text); }
+.ivsec-inspector::backdrop { background: #000b; }
+.ivsec-inspector-body { padding: 18px; }
+.ivsec-inspector p, .ivsec-inspector dl { font-size: 13px; line-height: 1.6; }
+.ivsec-inspector dl { display: grid; grid-template-columns: minmax(90px,.6fr) minmax(0,1.4fr); gap: 10px; }
+.ivsec-inspector dd { margin: 0; text-align: left; overflow-wrap: anywhere; }
+.ivsec-inspector dt { color: var(--muted); font: 10px var(--mono); }
+.ivsec-inspector pre { overflow: auto; max-height: 35dvh; padding: 12px; background: #080f11; font: 11px/1.6 var(--mono); }
+.ivsec-inspector-actions { display: flex; flex-wrap: wrap; gap: 10px; padding: 12px 0; }
 .animal-controls-mobile-heading { display: none; }
 .animal-controls-body { display: block; }
 .animal-controls-toggle {

@@ -99,7 +99,8 @@ export function Console() {
     function openLink() {
       const params = new URLSearchParams(window.location.search);
       const link = parsePlaybackLink(window.location.search);
-      if (params.get("tab") === "animals" || link.kind !== "none") setTab("animals");
+      if (params.get("tab") === "playback") setTab("playback");
+      else if (params.get("tab") === "animals" || link.kind !== "none") setTab("animals");
       if (link.kind === "invalid") {
         setPlaybackLinkError("This playback link is invalid. It needs a known camera and a valid detection time.");
       } else if (link.kind === "playback") {

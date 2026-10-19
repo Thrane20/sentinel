@@ -496,8 +496,10 @@ class AnimalWorkerTests(unittest.TestCase):
         ]
         self.assertEqual(worker.store_ivsec_records(records), 1)
         self.assertEqual(worker.store_ivsec_records(records), 0)
-        event = worker.ivsec_events()[0]
-        self.assertEqual(len(worker.ivsec_events()), 1)
+        retained = worker.ivsec_events()
+        self.assertEqual(len(retained), 2)
+        self.assertEqual({item["eventType"] for item in retained}, {"Smart detection", "Perimeter intrusion"})
+        event = next(item for item in retained if item["eventType"] == "Smart detection")
         self.assertEqual(event["cameraId"], "06")
         self.assertEqual(event["cameraName"], "Backyard - Down")
         self.assertEqual(event["eventType"], "Smart detection")

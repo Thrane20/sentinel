@@ -10,6 +10,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { cameras, type Camera } from "@/lib/cameras";
+import { IvsecNotifications } from "./ivsec-notifications";
 
 type RecorderEvent = {
   id: number;
@@ -61,6 +62,7 @@ export function IvsecEvents({
   const [loading, setLoading] = useState(true);
   const [clearing, setClearing] = useState(false);
   const [message, setMessage] = useState("");
+  const [inspectId, setInspectId] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -87,7 +89,12 @@ export function IvsecEvents({
   useEffect(() => {
     // State changes only after the asynchronous request completes.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    void load();
+    void load().then(() => {
+      const id =
+        new URLSearchParams(window.location.search).get("ivsecEvent") || "";
+      if (/^[1-9]\d*$/.test(id) && Number.isSafeInteger(Number(id)))
+        setInspectId(Number(id));
+    });
     const timer = window.setInterval(() => {
       if (!document.hidden) void load();
     }, 10000);
@@ -162,29 +169,37 @@ export function IvsecEvents({
           {events.map((event) => {
             const camera = cameras.find((item) => item.id === event.cameraId);
             return (
-              <button
-                key={event.id}
-                className="ivsec-alert-row"
-                disabled={!camera?.seen}
-                onClick={() =>
-                  camera && onOpenPlayback(camera, event.capturedAt)
-                }
-              >
-                <span className="ivsec-alert-icon">
-                  <Radio size={15} />
-                </span>
-                <span>
-                  <strong>{event.eventType}</strong>
-                  <small>
-                    {formatRecorderTime(event.sourceTime, event.capturedAt)}
-                  </small>
-                </span>
-                <span className="ivsec-alert-camera">
-                  <b>CH {event.cameraId}</b>
-                  <small>{event.cameraName}</small>
-                </span>
-                {camera?.seen && <ChevronRight size={15} />}
-              </button>
+              <div className="ivsec-event-entry" key={event.id}>
+                <button
+                  className="ivsec-alert-row"
+                  disabled={!camera?.seen}
+                  onClick={() =>
+                    camera && onOpenPlayback(camera, event.capturedAt)
+                  }
+                >
+                  <span className="ivsec-alert-icon">
+                    <Radio size={15} />
+                  </span>
+                  <span>
+                    <strong>{event.eventType}</strong>
+                    <small>
+                      {formatRecorderTime(event.sourceTime, event.capturedAt)}
+                    </small>
+                  </span>
+                  <span className="ivsec-alert-camera">
+                    <b>CH {event.cameraId}</b>
+                    <small>{event.cameraName}</small>
+                  </span>
+                  {camera?.seen && <ChevronRight size={15} />}
+                </button>
+                <button
+                  className="ivsec-inspect-button"
+                  aria-label={`Inspect IVSEC event ${event.id}`}
+                  onClick={() => setInspectId(event.id)}
+                >
+                  Inspect
+                </button>
+              </div>
             );
           })}
         </div>
@@ -204,6 +219,11 @@ export function IvsecEvents({
         follows its live event cursor. Clearing this list does not delete
         recorder footage.
       </p>
+      <IvsecNotifications
+        inspectId={inspectId}
+        onClose={() => setInspectId(null)}
+        onOpenPlayback={onOpenPlayback}
+      />
     </section>
   );
 }
