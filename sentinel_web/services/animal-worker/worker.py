@@ -17,6 +17,7 @@ import requests
 from requests.auth import HTTPDigestAuth
 from recorder_security import RecorderSecurity, RecorderSecurityError, StateChanged
 from ivsec_notifications import IvsecNotifications, observed_at
+from recorder_events import RecorderEvents, EVENTS
 
 CPU_MONITOR = CpuMonitor()
 
@@ -1045,6 +1046,7 @@ def ivsec_session():
 
 
 RECORDER_SECURITY = RecorderSecurity(ivsec_session, lambda: bool(IVSEC_USERNAME and IVSEC_PASSWORD))
+RECORDER_EVENTS = RecorderEvents(ivsec_session, lambda: bool(IVSEC_USERNAME and IVSEC_PASSWORD))
 
 
 def ivsec_playback_params(camera_id, detected_at):
@@ -1289,6 +1291,16 @@ class Handler(BaseHTTPRequestHandler):
         return json.loads(self.rfile.read(length) or b"{}")
 
     def do_GET(self):
+        if self.path == "/ivsec-remote/catalog":
+            return self.send_json(200, {"events": [{"id": e[0], "label": e[1]} for e in EVENTS]})
+        if self.path.startswith("/ivsec-remote?"):
+            query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            try:
+                return self.send_json(200, RECORDER_EVENTS.read(*(query.get(k, [None])[0] for k in ("camera", "event", "section"))))
+            except (ValueError, TypeError):
+                return self.send_json(400, {"error": "Invalid recorder settings selection."})
+            except Exception:
+                return self.send_json(503, {"error": "IVSEC settings unavailable. Check camera connectivity and retry."})
         if self.path == "/ivsec-notification-rules":
             return self.send_json(200, IVSEC_NOTIFICATIONS.rules())
         if self.path.startswith("/ivsec-events/"):
@@ -1359,6 +1371,17 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(404, {"error": "Not found"})
 
     def do_PATCH(self):
+        if self.path == "/ivsec-remote":
+            try:
+                return self.send_json(200, RECORDER_EVENTS.write(self.read_json()))
+            except StateChanged as error:
+                return self.send_json(409, {"error": str(error)})
+            except (ValueError, TypeError, KeyError):
+                return self.send_json(400, {"error": "Invalid or unsupported recorder settings. Reload and check the values."})
+            except RecorderSecurityError as error:
+                return self.send_json(503, {"error": str(error)})
+            except Exception:
+                return self.send_json(503, {"error": "IVSEC did not confirm this save. Reload this section before retrying."})
         if self.path == "/ivsec-security":
             try:
                 body = self.read_json()
