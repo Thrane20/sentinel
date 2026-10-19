@@ -1,0 +1,36 @@
+alias: Sentinel IVSEC event receiver
+mode: queued
+max: 30
+triggers:
+  - trigger: webhook
+    webhook_id: REPLACE_WITH_A_SEPARATE_PRIVATE_IVSEC_WEBHOOK_ID
+    allowed_methods: [POST]
+    local_only: true
+conditions:
+  - condition: template
+    value_template: "{{ trigger.json.type in ['sentinel.ivsec.matched', 'sentinel.ivsec.test'] }}"
+actions:
+  - event: "{{ 'sentinel_ivsec_test' if trigger.json.isTest else 'sentinel_ivsec' }}"
+    event_data:
+      notification_id: "{{ trigger.json.notificationId }}"
+      delivery_id: "{{ trigger.json.eventId }}"
+      recorder_event_id: "{{ trigger.json.recorderEventId }}"
+      camera_id: "{{ trigger.json.camera.id }}"
+      camera_name: "{{ trigger.json.camera.name }}"
+      event_key: "{{ trigger.json.eventKey }}"
+      event_label: "{{ trigger.json.eventType }}"
+      message: "{{ trigger.json.message }}"
+      observed_at: "{{ trigger.json.observedAt }}"
+      playback_url: "{{ trigger.json.playbackUrl }}"
+      sentinel_url: "{{ trigger.json.sentinelUrl }}"
+  - action: persistent_notification.create
+    data:
+      notification_id: "sentinel_ivsec_{{ trigger.json.eventId }}"
+      title: "{{ 'Sentinel IVSEC delivery test' if trigger.json.isTest else trigger.json.camera.name ~ ' · ' ~ trigger.json.eventType }}"
+      message: >-
+        {{ trigger.json.message }}
+
+        {{ trigger.json.observedAt }} · {{ trigger.json.notificationId }}
+
+        [Play recording]({{ trigger.json.playbackUrl }}) ·
+        [Inspect event]({{ trigger.json.sentinelUrl }})

@@ -16,6 +16,7 @@ import paho.mqtt.client as mqtt
 import requests
 from requests.auth import HTTPDigestAuth
 from recorder_security import RecorderSecurity, RecorderSecurityError, StateChanged
+from ivsec_notifications import IvsecNotifications, observed_at
 
 CPU_MONITOR = CpuMonitor()
 
@@ -24,6 +25,7 @@ FRIGATE_URL = os.getenv("FRIGATE_URL", "http://frigate:5000").rstrip("/")
 MQTT_HOST = os.getenv("MQTT_HOST", "mqtt")
 PUBLIC_URL = os.getenv("SENTINEL_PUBLIC_URL", "http://localhost:3000").rstrip("/")
 WEBHOOK_URL = os.getenv("HA_ANIMAL_WEBHOOK_URL", "")
+IVSEC_WEBHOOK_URL = os.getenv("HA_IVSEC_WEBHOOK_URL", "")
 IVSEC_HOST = os.getenv("IVSEC_HOST", "192.168.68.203")
 IVSEC_USERNAME = os.getenv("IVSEC_USERNAME", "")
 IVSEC_PASSWORD = os.getenv("IVSEC_PASSWORD", "")
@@ -108,6 +110,7 @@ def initialize():
               ON ivsec_events(captured_at DESC);
             """
         )
+        IVSEC_NOTIFICATIONS.initialize(db)
         defaults = {
             "globalEnabled": True,
             "alertsEnabled": False,
@@ -532,11 +535,12 @@ def alert_body(row, test=False):
     }
 
 
-def post_webhook(payload):
-    if not WEBHOOK_URL:
+def post_webhook(payload, destination=None):
+    destination = WEBHOOK_URL if destination is None else destination
+    if not destination:
         return False, "HA_ANIMAL_WEBHOOK_URL is not configured"
     request = urllib.request.Request(
-        WEBHOOK_URL,
+        destination,
         data=json.dumps(payload).encode(),
         headers={"Content-Type": "application/json", "User-Agent": "Sentinel/1.0"},
         method="POST",
@@ -548,6 +552,11 @@ def post_webhook(payload):
             return False, f"Home Assistant returned HTTP {response.status}"
     except Exception as error:
         return False, str(error)[:240]
+
+
+IVSEC_NOTIFICATIONS = IvsecNotifications(connect, DB_LOCK, camera_data, PUBLIC_URL,
+                                       lambda: bool(IVSEC_WEBHOOK_URL),
+                                       lambda payload: post_webhook(payload, IVSEC_WEBHOOK_URL))
 
 
 def wait_for_snapshot(event_id):
@@ -876,8 +885,12 @@ def channel_event_types(channel):
 def store_ivsec_alarms(alarm_list, sequence):
     stored = 0
     now = time.time()
+    cleared_before = float(settings().get("ivsecClearedBefore", 0))
     for alarm in alarm_list or []:
         source_time = str(alarm.get("time") or "")
+        source_timestamp = observed_at({"source_time": source_time})
+        if source_timestamp is not None and source_timestamp <= cleared_before:
+            continue
         for channel in alarm.get("channel_alarm") or []:
             raw_channel = str(channel.get("channel") or "")
             digits = "".join(char for char in raw_channel if char.isdigit())
@@ -890,8 +903,8 @@ def store_ivsec_alarms(alarm_list, sequence):
                 fingerprint = hashlib.sha256(material.encode()).hexdigest()
                 with DB_LOCK, connect() as db:
                     if db.execute(
-                        "SELECT 1 FROM ivsec_events WHERE camera=? AND source_time=?",
-                        (slug, source_time),
+                        "SELECT 1 FROM ivsec_events WHERE camera=? AND source_time=? AND event_type=?",
+                        (slug, source_time, event_type),
                     ).fetchone():
                         continue
                     result = db.execute(
@@ -901,6 +914,8 @@ def store_ivsec_alarms(alarm_list, sequence):
                         (fingerprint, slug, camera_name, event_type, source_time, detail, now),
                     )
                 stored += result.rowcount
+                if result.rowcount:
+                    IVSEC_NOTIFICATIONS.enqueue(result.lastrowid)
     return stored
 
 
@@ -948,10 +963,8 @@ def store_ivsec_records(record_groups):
                     "SELECT 1 FROM ivsec_events WHERE fingerprint=?", (fingerprint,)
                 ).fetchone():
                     continue
-                db.execute(
-                    "DELETE FROM ivsec_events WHERE camera=? AND source_time=?",
-                    (slug, source_time),
-                )
+                if db.execute("SELECT 1 FROM ivsec_events WHERE camera=? AND source_time=? AND event_type=?", (slug, source_time, RECORD_LABELS[record_type])).fetchone():
+                    continue
                 result = db.execute(
                     """INSERT OR IGNORE INTO ivsec_events
                        (fingerprint,camera,camera_name,event_type,source_time,details,captured_at)
@@ -983,7 +996,7 @@ def ivsec_events(limit=100):
             "cameraName": row["camera_name"],
             "eventType": row["event_type"],
             "sourceTime": row["source_time"],
-            "capturedAt": row["captured_at"],
+            "capturedAt": observed_at(row) or row["captured_at"],
         }
         for row in rows
     ]
@@ -1276,6 +1289,15 @@ class Handler(BaseHTTPRequestHandler):
         return json.loads(self.rfile.read(length) or b"{}")
 
     def do_GET(self):
+        if self.path == "/ivsec-notification-rules":
+            return self.send_json(200, IVSEC_NOTIFICATIONS.rules())
+        if self.path.startswith("/ivsec-events/"):
+            try:
+                return self.send_json(200, IVSEC_NOTIFICATIONS.inspect(int(self.path.split("/")[-1])))
+            except KeyError:
+                return self.send_json(404, {"error": "Event was cleared or is no longer available."})
+            except ValueError:
+                return self.send_json(400, {"error": "Invalid event ID."})
         if self.path == "/ivsec-security":
             try:
                 return self.send_json(200, RECORDER_SECURITY.read())
@@ -1360,6 +1382,19 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(400, {"error": str(error)})
 
     def do_POST(self):
+        if self.path == "/ivsec-notification-rules":
+            try:
+                return self.send_json(200, IVSEC_NOTIFICATIONS.save(self.read_json()))
+            except (ValueError, TypeError) as error:
+                return self.send_json(400, {"error": str(error)})
+        if self.path == "/ivsec-notification-test":
+            try:
+                body = self.read_json()
+                if not IVSEC_WEBHOOK_URL:
+                    raise ValueError("HA_IVSEC_WEBHOOK_URL is not configured.")
+                return self.send_json(202, {"queued": IVSEC_NOTIFICATIONS.enqueue(int(body["eventId"]), str(body["ruleId"]))})
+            except (ValueError, TypeError, KeyError) as error:
+                return self.send_json(400, {"error": str(error)})
         if self.path.startswith("/quality/"):
             try:
                 body = self.read_json()
@@ -1387,6 +1422,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(404, {"error": "Not found"})
 
     def do_DELETE(self):
+        if self.path.startswith("/ivsec-notification-rules/"):
+            IVSEC_NOTIFICATIONS.delete(urllib.parse.unquote(self.path.split("/")[-1]))
+            return self.send_json(200, {"deleted": True})
         if self.path == "/events":
             return self.send_json(200, clear_events())
         if self.path == "/ivsec-events":
@@ -1439,5 +1477,6 @@ if __name__ == "__main__":
     threading.Thread(target=cleanup, daemon=True).start()
     threading.Thread(target=ivsec_event_collector, daemon=True).start()
     threading.Thread(target=ivsec_history_collector, daemon=True).start()
+    threading.Thread(target=IVSEC_NOTIFICATIONS.run, daemon=True).start()
     print("Sentinel animal worker listening on port 3101", flush=True)
     ThreadingHTTPServer(("0.0.0.0", 3101), Handler).serve_forever()
