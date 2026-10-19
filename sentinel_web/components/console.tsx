@@ -29,6 +29,7 @@ import { Player } from "./player";
 import { RecordedPlayer } from "./recorded-player";
 import { Snapshot } from "./snapshot";
 import { CpuActivity } from "./cpu-activity";
+import { RecorderEventsSettings } from "./recorder-events-settings";
 import { RecorderSecurity } from "./recorder-security";
 import { parsePlaybackLink } from "@/lib/playback-link";
 import { Animals, type AnimalHealth } from "./animals";
@@ -99,7 +100,8 @@ export function Console() {
     function openLink() {
       const params = new URLSearchParams(window.location.search);
       const link = parsePlaybackLink(window.location.search);
-      if (params.get("tab") === "playback") setTab("playback");
+      if (params.get("tab") === "system") setTab("system");
+      else if (params.get("tab") === "playback") setTab("playback");
       else if (params.get("tab") === "animals" || link.kind !== "none") setTab("animals");
       if (link.kind === "invalid") {
         setPlaybackLinkError("This playback link is invalid. It needs a known camera and a valid detection time.");
@@ -528,6 +530,7 @@ export function Console() {
           )}
           {tab === "system" && (
             <>
+              <RecorderEventsSettings />
               <CpuActivity />
               <div className="system-grid">
                 <section className="panel">
@@ -677,8 +680,8 @@ export function Console() {
                 ))}
                 <p className="muted">
                   Channels 9–10 were reported offline; 11–16 were not
-                  classified. Device settings and ONVIF events are reserved for
-                  a future integration.
+                  classified. Supported event and deterrence settings can be
+                  configured above in IVSEC remote settings.
                 </p>
               </section>
             </>

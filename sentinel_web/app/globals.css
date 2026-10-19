@@ -2244,3 +2244,31 @@ dialog::backdrop {
 .cpu-metrics strong { display: block; color: var(--cyan); font-size: clamp(28px, 5vw, 42px); padding: 8px 0; }
 .cpu-metrics meter { width: 100%; height: 12px; accent-color: var(--cyan); }
 .cpu-activity > p { font-size: 11px; line-height: 1.6; }
+
+.recorder-remote { margin-bottom: 24px; }
+.recorder-remote > p { line-height: 1.6; }
+.recorder-selectors { display: flex; flex-wrap: wrap; gap: 16px; margin: 22px 0; }
+.recorder-selectors label, .recorder-field { display: grid; gap: 8px; font-size: 14px; }
+.recorder-selectors label { flex: 1; min-width: 220px; }
+.recorder-remote select, .recorder-remote input:not([type="checkbox"]) { width: 100%; min-width: 0; padding: 11px; background: #111b1b; border: 1px solid #354b47; color: var(--text, #e5ece9); border-radius: 3px; font: inherit; }
+.recorder-settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; align-items: start; }
+.recorder-settings-card { min-width: 0; padding: 20px; border: 1px solid #304440; }
+.recorder-settings-card .panel-heading { gap: 12px; margin-bottom: 10px; }
+.recorder-settings-card h3 { font-size: 21px; margin: 0; }
+.recorder-fields { border: 0; padding: 0; margin: 18px 0; display: grid; gap: 16px; min-width: 0; }
+.recorder-fields > fieldset { border: 1px solid #354b47; display: grid; gap: 10px; }
+.recorder-checkbox { display: flex; align-items: center; gap: 12px; font-size: 14px; line-height: 1.5; }
+.recorder-checkbox input { width: 20px; height: 20px; accent-color: #66e3d5; flex-shrink: 0; }
+.recorder-day { display: grid; grid-template-columns: 35px minmax(0, 1fr); align-items: center; gap: 10px; font-size: 13px; }
+.recorder-presets { display: flex; flex-wrap: wrap; gap: 8px; }
+.recorder-remote button { padding: 9px 12px; }
+.recorder-remote .notice { white-space: normal; overflow-wrap: anywhere; }
+@media (max-width: 850px) { .recorder-settings-grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 700px) { .recorder-remote { padding: 16px; } .recorder-remote > .panel-heading { flex-wrap: wrap; gap: 10px; } .recorder-settings-card { padding: 14px; } .recorder-selectors label { min-width: 0; flex-basis: 100%; } }
+.recorder-remote button { background: #1b2926; color: #e5ece9; border: 1px solid #3d554e; border-radius: 3px; cursor: pointer; }
+.recorder-remote button.primary { background: var(--yellow, #e6ff32); color: #101500; border-color: transparent; }
+.recorder-remote button:disabled { cursor: wait; opacity: .55; }
+.recorder-fields > fieldset { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.recorder-settings-card[data-section="actions"] { grid-column: 1 / -1; }
+.recorder-settings-card[data-section="actions"] .recorder-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 700px) { .recorder-settings-card[data-section="actions"] .recorder-fields { grid-template-columns: minmax(0, 1fr); } }

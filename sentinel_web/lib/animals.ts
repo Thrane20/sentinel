@@ -26,7 +26,7 @@ export async function animalWorker(
     return await fetch(`${workerUrl()}${path}`, {
       ...init,
       cache: "no-store",
-      signal: AbortSignal.timeout(path === "/ivsec-security" ? 40000 : path === "/settings" || path.startsWith("/quality/") ? 30000 : 5000),
+      signal: AbortSignal.timeout(path.startsWith("/ivsec-remote") ? 90000 : path === "/ivsec-security" ? 40000 : path === "/settings" || path.startsWith("/quality/") ? 30000 : 5000),
       headers: {
         ...(init?.body ? { "Content-Type": "application/json" } : {}),
         ...init?.headers,
