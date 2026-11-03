@@ -117,7 +117,8 @@ export function DetectionQualityEditor({
         !error && <p>Reading Frigate settings…</p>
       )}
       <p>
-        720p and 1080p use the recorder’s main stream. 360p uses the configured
+        720p uses the recorder’s native 1280 × 720 sub stream. 1080p decodes the
+        4K main stream and costs much more CPU. 360p uses the configured
         low-bandwidth stream.
       </p>
       <div className="quality-fields">
@@ -132,7 +133,7 @@ export function DetectionQualityEditor({
             <option value="360p">
               360p — 640 × 360 / low-bandwidth stream
             </option>
-            <option value="720p">720p — 1280 × 720 / main stream</option>
+            <option value="720p">720p — 1280 × 720 / sub stream</option>
             <option value="1080p">1080p — 1920 × 1080 / main stream</option>
           </select>
         </label>

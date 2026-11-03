@@ -60,7 +60,7 @@ async function start(channel: string): Promise<Worker> {
   const dir = await mkdtemp(join(tmpdir(), "sentinel-"));
   const index = /^[012]$/.test(process.env.IVSEC_STREAM_INDEX || "")
     ? process.env.IVSEC_STREAM_INDEX
-    : "0";
+    : "1"; // native 1280x720; /0 is 4K and costly to transcode
   const source = `rtsp://${encodeURIComponent(process.env.IVSEC_USERNAME!)}:${encodeURIComponent(process.env.IVSEC_PASSWORD!)}@${host}:554/ch${channel}/${index}`;
   const processHandle = spawn(
     /* turbopackIgnore: true */

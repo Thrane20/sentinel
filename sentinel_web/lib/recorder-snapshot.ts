@@ -42,9 +42,10 @@ function captureFrame(channel: string): Promise<ArrayBuffer> {
       reject(new Error("Invalid camera configuration"));
       return;
     }
-    const index = /^[012]$/.test(process.env.IVSEC_STREAM_INDEX || "")
-      ? process.env.IVSEC_STREAM_INDEX
-      : "0";
+    // Tiles are 640x360; use the recorder's low-bandwidth stream, not main.
+    const index = /^[012]$/.test(process.env.IVSEC_SNAPSHOT_STREAM_INDEX || "")
+      ? process.env.IVSEC_SNAPSHOT_STREAM_INDEX
+      : "2";
     const source = `rtsp://${encodeURIComponent(process.env.IVSEC_USERNAME!)}:${encodeURIComponent(process.env.IVSEC_PASSWORD!)}@${host}:554/ch${channel}/${index}`;
     const child = spawn(
       process.env.FFMPEG_PATH || "ffmpeg",

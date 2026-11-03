@@ -350,7 +350,8 @@ def save_detection_quality(camera_id, body):
         previous = detection_quality(camera_id)
         if previous["stream"] not in ("0", "1", "2"):
             raise ValueError("This camera uses a custom stream. Update it in Frigate instead.")
-        stream = os.getenv("IVSEC_SNAPSHOT_STREAM_INDEX", "2") if profile == "360p" else "0"
+        # /1 is the recorder's native 1280x720 stream; only 1080p needs the 4K main stream.
+        stream = {"720p": "1", "1080p": "0"}.get(profile, os.getenv("IVSEC_SNAPSHOT_STREAM_INDEX", "2"))
         if stream not in ("0", "1", "2"):
             raise ValueError("Invalid detection stream index")
         width, height = DETECTION_PROFILES[profile]

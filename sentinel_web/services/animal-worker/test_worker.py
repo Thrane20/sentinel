@@ -196,7 +196,7 @@ class AnimalWorkerTests(unittest.TestCase):
             body=json.loads(request.call_args_list[1].args[0].data)
             camera=body["config_data"]["cameras"]["ch05"]
             self.assertEqual(camera["detect"],{"width":1280,"height":720,"fps":2})
-            self.assertTrue(camera["ffmpeg"]["inputs"][0]["path"].endswith("/ch05/0"))
+            self.assertTrue(camera["ffmpeg"]["inputs"][0]["path"].endswith("/ch05/1"))
             self.assertTrue(result["restartRequested"])
             self.assertTrue(request.call_args_list[2].args[0].full_url.endswith("/api/restart"))
         saved=worker.settings()["cameras"]["05"]

@@ -135,7 +135,10 @@ def camera_config(name: str, channel: str) -> str:
     profile = saved_camera.get("detectionProfile", "360p")
     width, height = {"360p": (640, 360), "720p": (1280, 720), "1080p": (1920, 1080)}.get(profile, (640, 360))
     fps = saved_camera.get("detectionFps", 2)
-    source = json.dumps(rtsp_url(channel, "0" if profile in ("720p", "1080p") else None))
+    # Recorder streams: /0 is 4K main, /1 is native 1280x720, /2 is the mobile stream.
+    # Decoding 4K for a 720p detector costs ~10x the CPU of the native 720p stream.
+    stream = {"720p": "1", "1080p": "0"}.get(profile)
+    source = json.dumps(rtsp_url(channel, stream))
     min_score = min(0.50, threshold)
     max_area = "\n          max_area: 0.10" if channel == "05" else ""
     object_mask = os.getenv(f"FRIGATE_OBJECT_MASK_CH{channel}", "").strip()
