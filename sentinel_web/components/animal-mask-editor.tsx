@@ -265,8 +265,8 @@ export function AnimalMaskEditor({
                 points={polygon
                   .map(([x, y]) => `${x * 640},${y * 360}`)
                   .join(" ")}
-                fill={selected === index ? "#e5fb3355" : "#ff705544"}
-                stroke={selected === index ? "#e5fb33" : "#ff7055"}
+                fill={selected === index ? "#3c9be655" : "#ff705544"}
+                stroke={selected === index ? "#3c9be6" : "#ff7055"}
                 strokeWidth="2"
                 onPointerDown={(event) => {
                   event.stopPropagation();
@@ -281,8 +281,8 @@ export function AnimalMaskEditor({
                     cx={x * 640}
                     cy={y * 360}
                     r="6"
-                    fill="#e5fb33"
-                    stroke="#111"
+                    fill="#3c9be6"
+                    stroke="#fff"
                     onPointerDown={(event) => {
                       event.stopPropagation();
                       if (saving) return;
@@ -296,8 +296,8 @@ export function AnimalMaskEditor({
           {draft.length > 0 && (
             <polyline
               points={draft.map(([x, y]) => `${x * 640},${y * 360}`).join(" ")}
-              fill="#e5fb3322"
-              stroke="#e5fb33"
+              fill="#3c9be622"
+              stroke="#3c9be6"
               strokeWidth="2"
             />
           )}
@@ -307,7 +307,7 @@ export function AnimalMaskEditor({
               cx={x * 640}
               cy={y * 360}
               r="4"
-              fill="#e5fb33"
+              fill="#3c9be6"
               pointerEvents="none"
             />
           ))}

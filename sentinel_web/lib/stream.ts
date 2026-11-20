@@ -54,14 +54,33 @@ export async function getStream(channel: string, file: string) {
     return { status: 503, error: "Stream is warming up. Try again shortly." };
   }
 }
-async function start(channel: string): Promise<Worker> {
+// With Frigate running, read through its go2rtc restream so the recorder
+// serves one connection per stream, shared with detection and other viewers.
+// Without it (local development), connect to the recorder directly.
+export function restreamUrl(channel: string, index: string) {
+  const base = (process.env.FRIGATE_RTSP_URL || "").replace(/\/$/, "");
+  if (!base) return undefined;
+  if (!/^rtsp:\/\/[a-zA-Z0-9.-]+(:\d+)?$/.test(base))
+    throw new Error("Invalid FRIGATE_RTSP_URL");
+  return `${base}/ch${channel}_${index}`;
+}
+
+export function recorderSource(channel: string, index: string) {
+  if (!/^0[1-8]$/.test(channel) || !/^[012]$/.test(index))
+    throw new Error("Invalid camera stream");
+  const restream = restreamUrl(channel, index);
+  if (restream) return restream;
   const host = process.env.IVSEC_HOST || "recorder.local";
   if (!/^[a-zA-Z0-9.-]+$/.test(host)) throw new Error("Invalid IVSEC_HOST");
-  const dir = await mkdtemp(join(tmpdir(), "sentinel-"));
+  return `rtsp://${encodeURIComponent(process.env.IVSEC_USERNAME!)}:${encodeURIComponent(process.env.IVSEC_PASSWORD!)}@${host}:554/ch${channel}/${index}`;
+}
+
+async function start(channel: string): Promise<Worker> {
   const index = /^[012]$/.test(process.env.IVSEC_STREAM_INDEX || "")
-    ? process.env.IVSEC_STREAM_INDEX
+    ? process.env.IVSEC_STREAM_INDEX!
     : "1"; // native 1280x720; /0 is 4K and costly to transcode
-  const source = `rtsp://${encodeURIComponent(process.env.IVSEC_USERNAME!)}:${encodeURIComponent(process.env.IVSEC_PASSWORD!)}@${host}:554/ch${channel}/${index}`;
+  const source = recorderSource(channel, index);
+  const dir = await mkdtemp(join(tmpdir(), "sentinel-"));
   const processHandle = spawn(
     /* turbopackIgnore: true */
     process.env.FFMPEG_PATH || "ffmpeg",

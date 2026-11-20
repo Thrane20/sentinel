@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-test("iPhone camera discovery, filters, and no horizontal overflow", async ({
+test("iPhone camera grid shows every camera without horizontal overflow", async ({
   page,
 }) => {
   await page.goto("/");
@@ -20,15 +20,8 @@ test("iPhone camera discovery, filters, and no horizontal overflow", async ({
   expect(
     headerBox && summaryBox && summaryBox.y >= headerBox.y + headerBox.height,
   ).toBe(true);
-  await page.getByRole("button", { name: "Entry", exact: true }).click();
-  await expect(page.locator(".camera-card")).toHaveCount(3);
-  await page.getByRole("button", { name: "All cameras", exact: true }).click();
-  await page
-    .getByRole("button", { name: "Include previously offline cameras" })
-    .click();
-  await expect(page.locator(".camera-card")).toHaveCount(7);
-  await page.getByRole("textbox", { name: "Search cameras" }).fill("pool");
-  await expect(page.locator(".camera-card")).toHaveCount(1);
+  await expect(page.locator(".toolbar")).toHaveCount(0);
+  await expect(page.getByText("1-second snapshots active")).toHaveCount(0);
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
@@ -219,7 +212,7 @@ test("animal event cards and controls render from the local service", async ({
           ["01", "02", "03", "04", "05", "06", "07", "08"].map((id) => [
             id,
             {
-              enabled: !["02", "07"].includes(id),
+              enabled: id !== "07",
               threshold: 0.8,
               minArea: 0.007,
               maxArea: id === "05" ? 0.1 : 0.99,

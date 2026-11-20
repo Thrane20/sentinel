@@ -86,18 +86,29 @@ test("failed changes clear the armed indicator and allow status recovery", async
   await expect(controls.getByRole("status")).toHaveText("Armed");
 });
 
-test("home polls changes made outside Sentinel", async ({ page }) => {
+test("home reads IVSEC status only on load and manual refresh", async ({
+  page,
+}) => {
   let current = armed;
+  let calls = 0;
   await page.clock.install();
-  await page.route("**/api/ivsec/security", (route) =>
-    route.fulfill({ json: current }),
-  );
+  await page.route("**/api/ivsec/security", (route) => {
+    calls += 1;
+    return route.fulfill({ json: current });
+  });
   await page.goto("/");
   const status = page.getByLabel("IVSEC arming controls").getByRole("status");
   await expect(status).toHaveText("Armed");
   current = disarmed;
-  await page.clock.runFor(10100);
+  await page.clock.runFor(60000);
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(status).toHaveText("Armed");
+  expect(calls).toBe(1);
+  await page
+    .getByRole("button", { name: "Refresh connection and IVSEC status" })
+    .click();
   await expect(status).toHaveText("Disarmed");
+  expect(calls).toBe(2);
 });
 
 test("recorder changes reject cross-origin and malformed requests", async ({

@@ -14,8 +14,9 @@ class StateChanged(RecorderSecurityError):
 
 
 class RecorderSecurity:
-    def __init__(self, session_factory, configured):
+    def __init__(self, session_factory, configured, logout=None):
         self.session_factory = session_factory
+        self.logout = logout
         self.configured = configured
         self.lock = threading.Lock()
         self.cached = None
@@ -38,7 +39,10 @@ class RecorderSecurity:
 
     def _invalidate_session(self):
         if self.session is not None:
-            self.session.close()
+            if self.logout is not None:
+                self.logout(self.base, self.session)
+            else:
+                self.session.close()
         self.session = None
         self.base = None
         self.cached = None

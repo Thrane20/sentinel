@@ -27,6 +27,15 @@ class RecorderSecurityTests(unittest.TestCase):
         self.assertTrue(self.session.post.call_args.args[0].endswith("/Get"))
         self.session.close.assert_not_called()
 
+    def test_failed_read_logs_out_the_recorder_session(self):
+        logout = Mock()
+        security = RecorderSecurity(self.factory, lambda: True, logout)
+        self.session.post.side_effect = OSError("offline")
+        with self.assertRaises(OSError):
+            security.read()
+        logout.assert_called_once_with("http://recorder", self.session)
+        self.assertIsNone(security.session)
+
     def test_expired_status_cache_reuses_authenticated_session(self):
         self.session.post.return_value = self.response(self.data)
         self.security.read()

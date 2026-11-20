@@ -6,6 +6,7 @@ import shutil
 import sqlite3
 import sys
 import tempfile
+import urllib.parse
 import urllib.request
 import zipfile
 
@@ -28,6 +29,7 @@ ADAPTER_MARKER = MODEL_DIR / ".frigate-yolonas-adapter-v1"
 
 CAMERAS = (
     ("ch01", "01"),
+    ("ch02", "02"),
     ("ch03", "03"),
     ("ch04", "04"),
     ("ch05", "05"),
@@ -111,14 +113,34 @@ def adapt_for_frigate(source: pathlib.Path) -> None:
     onnx.save(model, MODEL_PATH)
 
 
-def rtsp_url(channel: str, stream: str | None = None) -> str:
-    # Frigate performs the required FFmpeg password escaping when it loads the
-    # config. Supplying a pre-escaped value here would encode '%' a second time.
-    username = os.environ["IVSEC_USERNAME"]
-    password = os.environ["IVSEC_PASSWORD"]
+# Frigate's bundled go2rtc holds the only recorder connection for each stream
+# and fans it out to Frigate detection, Sentinel live view and tile fallback.
+# go2rtc connects lazily, so an unused stream costs nothing on the recorder.
+RESTREAM_INDEXES = ("0", "1", "2")
+# Every recorder channel Sentinel can show, including ones Frigate does not detect on.
+RESTREAM_CHANNELS = ("01", "02", "03", "04", "05", "06", "07", "08")
+
+
+def restream_name(channel: str, stream: str) -> str:
+    return f"ch{channel}_{stream}"
+
+
+def restream_path(channel: str, stream: str) -> str:
+    return f"rtsp://127.0.0.1:8554/{restream_name(channel, stream)}"
+
+
+def go2rtc_config() -> str:
+    # Unlike Frigate's ffmpeg inputs, go2rtc parses the URL itself, so the
+    # credentials must be percent-encoded here.
+    username = urllib.parse.quote(os.environ["IVSEC_USERNAME"], safe="")
+    password = urllib.parse.quote(os.environ["IVSEC_PASSWORD"], safe="")
     host = os.getenv("IVSEC_HOST", "recorder.local")
-    stream = stream if stream is not None else os.getenv("IVSEC_SNAPSHOT_STREAM_INDEX", "2")
-    return f"rtsp://{username}:{password}@{host}:554/ch{channel}/{stream}"
+    lines = ["go2rtc:", "  streams:"]
+    for channel in RESTREAM_CHANNELS:
+        for stream in RESTREAM_INDEXES:
+            source = f"rtsp://{username}:{password}@{host}:554/ch{channel}/{stream}"
+            lines += [f"    {restream_name(channel, stream)}:", f"      - {json.dumps(source)}"]
+    return "\n".join(lines) + "\n"
 
 
 def camera_config(name: str, channel: str) -> str:
@@ -137,8 +159,10 @@ def camera_config(name: str, channel: str) -> str:
     fps = saved_camera.get("detectionFps", 2)
     # Recorder streams: /0 is 4K main, /1 is native 1280x720, /2 is the mobile stream.
     # Decoding 4K for a 720p detector costs ~10x the CPU of the native 720p stream.
-    stream = {"720p": "1", "1080p": "0"}.get(profile)
-    source = json.dumps(rtsp_url(channel, stream))
+    stream = {"720p": "1", "1080p": "0"}.get(profile) or os.getenv("IVSEC_SNAPSHOT_STREAM_INDEX", "2")
+    if stream not in RESTREAM_INDEXES:
+        stream = "2"
+    source = json.dumps(restream_path(channel, stream))
     min_score = min(0.50, threshold)
     max_area = "\n          max_area: 0.10" if channel == "05" else ""
     object_mask = os.getenv(f"FRIGATE_OBJECT_MASK_CH{channel}", "").strip()
@@ -148,7 +172,7 @@ def camera_config(name: str, channel: str) -> str:
     ffmpeg:
       inputs:
         - path: {source}
-          input_args: preset-rtsp-generic
+          input_args: preset-rtsp-restream
           roles: [detect]
     detect:
       enabled: {detect_enabled}
@@ -221,6 +245,9 @@ snapshots:
   retain:
     default: 30
 
+"""
+    config += go2rtc_config()
+    config += """
 cameras:
 """
     config += "".join(camera_config(name, channel) for name, channel in CAMERAS)

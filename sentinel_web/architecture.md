@@ -9,9 +9,10 @@ This guide describes the implementation in this repository, rather than confirmi
 ```mermaid
 flowchart TD
     Browser[Phone or desktop browser] <-->|Pages, JSON, JPEG and HLS over HTTP| Next[Next.js: interface and API routes]
-    Recorder[IVSEC recorder] -->|RTSP video on demand| FFmpeg[FFmpeg managed by Next.js]
+    Recorder[IVSEC recorder] -->|One RTSP connection per stream| Go2rtc[go2rtc restream inside Frigate]
+    Go2rtc -->|RTSP video on demand| FFmpeg[FFmpeg managed by Next.js]
     FFmpeg -->|HLS video| Next
-    Recorder -->|Continuous mobile RTSP streams| Frigate[Frigate: animal detection and snapshots]
+    Go2rtc -->|Continuous mobile streams| Frigate[Frigate: animal detection and snapshots]
     Frigate -->|JPEG snapshots over HTTP| Next
     Next <-->|Internal HTTP API| Worker[Python alert worker]
     Recorder -->|Event history and live metadata over HTTP| Worker
@@ -44,7 +45,7 @@ flowchart TD
 
 The browser requests `/api/stream/[channel]/[file]`. Next.js starts or reuses an FFmpeg process that reads the recorder's configured RTSP stream and produces HLS video. The browser plays it using hls.js or native Safari HLS.
 
-This path runs independently of Frigate and MQTT. Next.js shares up to four active transcoders and expires idle streams. HLS adds several seconds of delay.
+Under Docker Compose this path reads Frigate's go2rtc restream (`FRIGATE_RTSP_URL`), so a camera that Frigate already reads at the same stream index costs the recorder no extra connection, and go2rtc closes recorder connections nobody is using. Live view therefore needs the Frigate container running, though not its detector. Without `FRIGATE_RTSP_URL` (plain `npm run dev`) FFmpeg connects to the recorder directly. Next.js shares up to four active transcoders and expires idle streams. HLS adds several seconds of delay.
 
 ### 2. Showing dashboard thumbnails
 

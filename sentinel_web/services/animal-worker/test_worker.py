@@ -34,7 +34,7 @@ class AnimalWorkerTests(unittest.TestCase):
         self.assertTrue(current["globalEnabled"])
         self.assertFalse(current["alertsEnabled"])
         self.assertTrue(current["cameras"]["01"]["enabled"])
-        self.assertFalse(current["cameras"]["02"]["enabled"])
+        self.assertTrue(current["cameras"]["02"]["enabled"])
         self.assertEqual(current["cameras"]["05"]["threshold"], 0.65)
         self.assertEqual(current["cameras"]["05"]["maxArea"], 0.10)
         self.assertEqual(current["cameras"]["05"]["minTravel"], 0.04)
@@ -196,7 +196,9 @@ class AnimalWorkerTests(unittest.TestCase):
             body=json.loads(request.call_args_list[1].args[0].data)
             camera=body["config_data"]["cameras"]["ch05"]
             self.assertEqual(camera["detect"],{"width":1280,"height":720,"fps":2})
-            self.assertTrue(camera["ffmpeg"]["inputs"][0]["path"].endswith("/ch05/1"))
+            self.assertEqual(camera["ffmpeg"]["inputs"][0]["path"],"rtsp://127.0.0.1:8554/ch05_1")
+            self.assertEqual(camera["ffmpeg"]["inputs"][0]["input_args"],"preset-rtsp-restream")
+            self.assertNotIn("test-password",json.dumps(body))
             self.assertTrue(result["restartRequested"])
             self.assertTrue(request.call_args_list[2].args[0].full_url.endswith("/api/restart"))
         saved=worker.settings()["cameras"]["05"]
@@ -207,6 +209,26 @@ class AnimalWorkerTests(unittest.TestCase):
         self.assertEqual(worker.settings()["cameras"]["05"]["detectionProfile"],"720p")
         for invalid in ({"profile":"4k","fps":2},{"profile":"720p","fps":30},{"profile":"720p","fps":True}):
             with self.assertRaises(ValueError):worker.save_detection_quality("05",invalid)
+
+    def test_detection_stream_index_reads_restream_and_direct_paths(self):
+        self.assertEqual(worker.detection_stream_index("rtsp://127.0.0.1:8554/ch05_1"),"1")
+        self.assertEqual(worker.detection_stream_index("rtsp://u:p@host:554/ch05/2"),"2")
+        self.assertEqual(worker.detection_stream_index("rtsp://host/custom"),"custom")
+        with self.assertRaises(ValueError):worker.detection_source("05","3")
+
+    def test_recorder_retry_delay_backs_off_to_two_minutes(self):
+        self.assertEqual([worker.ivsec_retry_delay(n) for n in (1,2,3,4,5,6,10)],[5,10,20,40,80,120,120])
+
+    def test_ivsec_logout_releases_login_and_tolerates_failure(self):
+        from unittest.mock import MagicMock
+        session=MagicMock()
+        worker.ivsec_logout("http://recorder",session)
+        self.assertEqual(session.post.call_args.args[0],"http://recorder/API/Web/Logout")
+        session.close.assert_called_once()
+        failing=MagicMock();failing.post.side_effect=worker.requests.ConnectionError()
+        worker.ivsec_logout("http://recorder",failing)
+        failing.close.assert_called_once()
+        worker.ivsec_logout("http://recorder",None)
 
     def test_quality_failure_rolls_back_and_restart_failure_is_reported(self):
         from unittest.mock import MagicMock
@@ -221,7 +243,7 @@ class AnimalWorkerTests(unittest.TestCase):
                     worker.save_detection_quality("05",{"profile":"1080p","fps":5})
                 restored=json.loads(request.call_args.args[0].data)["config_data"]["cameras"]["ch05"]
                 self.assertEqual(restored["detect"]["width"],640)
-                self.assertTrue(restored["ffmpeg"]["inputs"][0]["path"].endswith("/2"))
+                self.assertTrue(restored["ffmpeg"]["inputs"][0]["path"].endswith("/ch05_2"))
             self.assertEqual(worker.settings(),before)
             with patch.object(worker.urllib.request,"urlopen",side_effect=[response(inputs),response({"success":True}),OSError("restart failed")]):
                 saved=worker.save_detection_quality("05",{"profile":"720p","fps":2})

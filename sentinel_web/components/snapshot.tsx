@@ -16,6 +16,7 @@ export function Snapshot({
   const [current, setCurrent] = useState("");
   const currentUrl = useRef("");
   const [fallback, setFallback] = useState(false);
+  const [stale, setStale] = useState(false);
 
   useEffect(() => {
     if (!enabled) return;
@@ -23,10 +24,17 @@ export function Snapshot({
     let timer: ReturnType<typeof setTimeout>;
     const controller = new AbortController();
 
+    let lastFrame = Date.now();
+
     async function load() {
       let objectUrl = "";
+      let attempted = false;
       try {
-        if (document.hidden) return;
+        if (document.hidden) {
+          lastFrame = Date.now(); // a hidden tab is not a stale feed
+          return;
+        }
+        attempted = true;
         const response = await fetch(
           `/api/snapshot/${channel}?v=${Date.now()}`,
           {
@@ -51,11 +59,16 @@ export function Snapshot({
         currentUrl.current = objectUrl;
         setCurrent(objectUrl);
         setFallback(response.headers.get("X-Snapshot-Source") === "recorder");
+        lastFrame = Date.now();
+        setStale(false);
         if (previous)
           window.setTimeout(() => URL.revokeObjectURL(previous), 1000);
       } catch {
         if (objectUrl) URL.revokeObjectURL(objectUrl);
       } finally {
+        // Keep the last frame on failure, but mark it so it is not mistaken for live.
+        if (attempted && !cancelled && Date.now() - lastFrame > 20000)
+          setStale(true);
         if (!cancelled) timer = setTimeout(() => void load(), 1000);
       }
     }
@@ -87,7 +100,14 @@ export function Snapshot({
         sizes="(max-width: 700px) 50vw, (max-width: 1200px) 33vw, 25vw"
         unoptimized
       />
-      {fallback && (
+      {stale ? (
+        <span
+          className="snapshot-fallback"
+          title="No new frame for over 20 seconds. Frigate may be offline; showing the last image received."
+        >
+          PAUSED
+        </span>
+      ) : fallback && (
         <span
           className="snapshot-fallback"
           title="Frigate preview unavailable. This image comes directly from the recorder; check detector health."

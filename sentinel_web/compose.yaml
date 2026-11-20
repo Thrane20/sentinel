@@ -7,6 +7,9 @@ services:
     environment:
       ANIMAL_WORKER_URL: http://animal-alert-worker:3101
       FRIGATE_URL: http://frigate:5000
+      # Live view and tile fallback read Frigate's go2rtc restream (internal
+      # network only) so the recorder serves one connection per stream.
+      FRIGATE_RTSP_URL: rtsp://frigate:8554
     depends_on:
       animal-alert-worker:
         condition: service_healthy

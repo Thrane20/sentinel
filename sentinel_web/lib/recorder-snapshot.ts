@@ -1,9 +1,23 @@
 import "server-only";
 import { spawn } from "node:child_process";
 
+import { recorderSource, restreamUrl } from "./stream";
+
 const pending = new Map<string, Promise<ArrayBuffer>>();
 const frames = new Map<string, { data: ArrayBuffer; expires: number }>();
 const failures = new Map<string, number>();
+
+// Tile fallback when Frigate has no frame. Through Frigate's go2rtc restream a
+// capture reuses the connection detection already holds, so it can refresh
+// every 10s. Directly against the recorder (no Frigate), each capture is a new
+// recorder session: allow one at a time, at most once a minute per camera.
+// When Frigate is down entirely the restream fails too and tiles keep their
+// last image instead of opening recorder connections.
+function limits() {
+  return restreamUrl("01", "2")
+    ? { cacheMs: 10_000, retryMs: 10_000, concurrent: 2 }
+    : { cacheMs: 60_000, retryMs: 60_000, concurrent: 1 };
+}
 
 // One short-lived capture per camera; concurrent refreshes share the same work.
 export function recorderSnapshot(channel: string): Promise<ArrayBuffer> {
@@ -16,17 +30,18 @@ export function recorderSnapshot(channel: string): Promise<ArrayBuffer> {
     );
   const existing = pending.get(channel);
   if (existing) return existing;
-  if (pending.size >= 2)
+  const { cacheMs, retryMs, concurrent } = limits();
+  if (pending.size >= concurrent)
     return Promise.reject(new Error("Snapshot capture busy. Retry shortly."));
   const capture = captureFrame(channel)
     .then(
       (data) => {
-        frames.set(channel, { data, expires: Date.now() + 10000 });
+        frames.set(channel, { data, expires: Date.now() + cacheMs });
         failures.delete(channel);
         return data;
       },
       (error) => {
-        failures.set(channel, Date.now() + 5000);
+        failures.set(channel, Date.now() + retryMs);
         throw error;
       },
     )
@@ -37,16 +52,17 @@ export function recorderSnapshot(channel: string): Promise<ArrayBuffer> {
 
 function captureFrame(channel: string): Promise<ArrayBuffer> {
   return new Promise((resolve, reject) => {
-    const host = process.env.IVSEC_HOST || "recorder.local";
-    if (!/^[a-zA-Z0-9.-]+$/.test(host) || !/^0[1-8]$/.test(channel)) {
+    // Tiles are 640x360; use the recorder's low-bandwidth stream, not main.
+    const index = /^[012]$/.test(process.env.IVSEC_SNAPSHOT_STREAM_INDEX || "")
+      ? process.env.IVSEC_SNAPSHOT_STREAM_INDEX!
+      : "2";
+    let source: string;
+    try {
+      source = recorderSource(channel, index);
+    } catch {
       reject(new Error("Invalid camera configuration"));
       return;
     }
-    // Tiles are 640x360; use the recorder's low-bandwidth stream, not main.
-    const index = /^[012]$/.test(process.env.IVSEC_SNAPSHOT_STREAM_INDEX || "")
-      ? process.env.IVSEC_SNAPSHOT_STREAM_INDEX
-      : "2";
-    const source = `rtsp://${encodeURIComponent(process.env.IVSEC_USERNAME!)}:${encodeURIComponent(process.env.IVSEC_PASSWORD!)}@${host}:554/ch${channel}/${index}`;
     const child = spawn(
       process.env.FFMPEG_PATH || "ffmpeg",
       [

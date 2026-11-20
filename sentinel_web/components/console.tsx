@@ -16,10 +16,8 @@ import {
   PawPrint,
   Radio,
   RefreshCw,
-  Search,
   Settings2,
   Shield,
-  SlidersHorizontal,
   Upload,
   Wifi,
   X,
@@ -57,16 +55,14 @@ export function Console() {
   const [tab, setTab] = useState<Tab>("live");
   const [health, setHealth] = useState<Health | null>(null);
   const [healthError, setHealthError] = useState(false);
-  const [zone, setZone] = useState("All cameras");
-  const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Camera | null>(null);
   const [cameraMode, setCameraMode] = useState<CameraMode>("live");
   const [playbackAt, setPlaybackAt] = useState(
     () => Math.floor(Date.now() / 1000) - 30,
   );
   const [streamState, setStreamState] = useState("Connecting");
-  const [showInactive, setShowInactive] = useState(true);
   const [snapshotTick, setSnapshotTick] = useState(() => Date.now());
+  const [securityRefresh, setSecurityRefresh] = useState(0);
   const [localClip, setLocalClip] = useState<{
     url: string;
     name: string;
@@ -134,12 +130,6 @@ export function Console() {
     },
     [localClip],
   );
-  const filtered = cameras.filter(
-    (c) =>
-      (showInactive || c.seen) &&
-      (zone === "All cameras" || c.zone === zone) &&
-      c.name.toLowerCase().includes(search.toLowerCase()),
-  );
   function openCamera(camera: Camera, eventTime?: number) {
     opener.current = document.activeElement as HTMLElement;
     setPlaybackAt(
@@ -164,7 +154,7 @@ export function Console() {
             <Aperture size={27} />
           </span>
           <span>
-            SENTINEL<i>RESIDENTIAL SECURITY OS</i>
+            SENTINEL<i>Security console</i>
           </span>
         </Link>
         <div className="side-caption">WORKSPACE / 01</div>
@@ -195,7 +185,12 @@ export function Console() {
       <div className="workspace">
         <header className="topbar">
           <div className="mobile-brand">
-            <Aperture size={23} /> SENTINEL
+            <span className="brand-icon">
+              <Aperture size={20} />
+            </span>
+            <span>
+              SENTINEL<i>Security console</i>
+            </span>
           </div>
           <div className="breadcrumb">
             WORKSPACE <ChevronRight size={12} />
@@ -301,24 +296,25 @@ export function Console() {
                 <div>
                   <div className="live-title-row">
                     <h1>Live cameras</h1>
-                    <RecorderSecurity />
+                    <RecorderSecurity refreshSignal={securityRefresh} />
                   </div>
-                  <span className="live-status">
-                    <span className={health?.configured ? "online" : ""} />
-                    {healthError
-                      ? "Bridge unavailable"
-                      : health?.configured
-                        ? "1-second snapshots active"
+                  {(healthError || (health && !health.configured)) && (
+                    <span className="live-status">
+                      <span />
+                      {healthError
+                        ? "Bridge unavailable"
                         : "Stream bridge needs setup"}
-                  </span>
+                    </span>
+                  )}
                 </div>
                 <button
                   className="refresh-button"
-                  aria-label="Refresh connection status"
+                  aria-label="Refresh connection and IVSEC status"
                   onClick={() => {
                     setRefreshing(true);
                     void refresh();
                     setSnapshotTick(Date.now());
+                    setSecurityRefresh((n) => n + 1);
                   }}
                   disabled={refreshing}
                 >
@@ -330,7 +326,7 @@ export function Console() {
                   <h2>
                     <span className="slash">{"//"}</span> Camera feeds{" "}
                     <span className="count">
-                      {filtered.length.toString().padStart(2, "0")}
+                      {cameras.length.toString().padStart(2, "0")}
                     </span>
                   </h2>
                   <p>Tap any camera for live video.</p>
@@ -339,42 +335,11 @@ export function Console() {
                   <Grid2X2 size={15} /> GRID VIEW
                 </span>
               </div>
-              <div className="toolbar">
-                <div className="filters">
-                  {["All cameras", "Entry", "Outdoor"].map((item) => (
-                    <button
-                      className={zone === item ? "selected" : ""}
-                      onClick={() => setZone(item)}
-                      key={item}
-                    >
-                      {item}
-                    </button>
-                  ))}
-                </div>
-                <div className="search-wrap">
-                  <Search size={15} />
-                  <input
-                    aria-label="Search cameras"
-                    placeholder="Find a camera…"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                  />
-                </div>
-                <button
-                  className={`filter-toggle ${showInactive ? "on" : ""}`}
-                  aria-label="Include previously offline cameras"
-                  title="Include previously offline cameras"
-                  aria-pressed={showInactive}
-                  onClick={() => setShowInactive((v) => !v)}
-                >
-                  <SlidersHorizontal size={17} />
-                </button>
-              </div>
               <div className="camera-grid">
-                {filtered.map((camera) => (
+                {cameras.map((camera) => (
                   <button
                     key={camera.id}
-                    className={`camera-card scene-${camera.id}`}
+                    className={`camera-card scene-${camera.id}${camera.seen ? "" : " offline"}`}
                     onClick={() => openCamera(camera)}
                   >
                     <div className="camera-visual">
@@ -399,16 +364,13 @@ export function Console() {
                         tick={snapshotTick}
                         enabled={Boolean(health?.configured && camera.seen)}
                       />
-                      <div className="camera-bottom">
-                        <span>
-                          SECTOR {camera.id} / {camera.zone.toUpperCase()}
-                        </span>
-                        <Maximize2 size={14} />
-                      </div>
                     </div>
                     <div className="camera-info">
                       <div>
-                        <h3>{camera.name}</h3>
+                        <h3>
+                          <CameraIcon size={13} aria-hidden="true" />
+                          {camera.name}
+                        </h3>
                         <p>
                           <span className="tiny-dot" />
                           {camera.seen
@@ -416,18 +378,13 @@ export function Console() {
                             : "Offline in last inspection"}
                         </p>
                       </div>
-                      <ArrowUpRight size={19} />
+                      <span className="camera-expand" aria-hidden="true">
+                        <Maximize2 size={15} />
+                      </span>
                     </div>
                   </button>
                 ))}
               </div>
-              {filtered.length === 0 && (
-                <div className="empty">
-                  <Search />
-                  <h3>No matching cameras</h3>
-                  <p>Try another name or camera group.</p>
-                </div>
-              )}
               <div className="inventory-note">
                 <CircleHelp size={15} />
                 <span>

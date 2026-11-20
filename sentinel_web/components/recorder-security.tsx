@@ -15,7 +15,9 @@ type RecorderState = {
   checkedAt: number;
 };
 
-export function RecorderSecurity() {
+// The recorder's status endpoint is flaky under frequent polling, so status is
+// read once on mount and again only when the parent bumps `refreshSignal`.
+export function RecorderSecurity({ refreshSignal = 0 }: { refreshSignal?: number }) {
   const [state, setState] = useState<RecorderState | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -62,17 +64,19 @@ export function RecorderSecurity() {
     // The recorder read updates state only after its asynchronous response.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void refresh();
-    const timer = setInterval(() => void refresh(), 10000);
-    const onFocus = () => void refresh();
-    window.addEventListener("focus", onFocus);
     return () => {
-      clearInterval(timer);
-      window.removeEventListener("focus", onFocus);
       ++requestGeneration.current;
       pending.current?.abort();
       pending.current = null;
     };
   }, [refresh]);
+
+  const lastSignal = useRef(refreshSignal);
+  useEffect(() => {
+    if (lastSignal.current === refreshSignal) return;
+    lastSignal.current = refreshSignal;
+    void refresh();
+  }, [refresh, refreshSignal]);
 
   async function toggle() {
     if (!state || writing.current) return;
