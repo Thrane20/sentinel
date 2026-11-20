@@ -1,28 +1,28 @@
 /*
- * Sentinel — soft "neumorphic" light theme.
+ * Sentinel — soft "neumorphic" milky caramel theme.
  * Surfaces share the page colour and are lifted (raise) or pressed (inset)
  * with paired light/shade shadows. Accent is a deep teal-blue; status colours
  * are reserved for meaning (ok / warn / danger).
  */
 :root {
-  --bg: #e8edf3;
-  --surface: #e8edf3;
-  --surface-hi: #eef2f7;
-  --shade: #c5cdd8;
-  --light: #ffffff;
-  --line: #d5dce5;
-  --text: #1f2a37;
-  --muted: #637083;
-  --faint: #8a95a5;
+  --bg: #e6d5bd;
+  --surface: #e6d5bd;
+  --surface-hi: #ecdfcb;
+  --shade: #c4a986;
+  --light: #f7ecdc;
+  --line: #d3bea0;
+  --text: #3b2a1b;
+  --muted: #6a523b;
+  --faint: #927858;
   --accent: #2b5d7a;
-  --accent-soft: #d6e4ee;
+  --accent-soft: #d3d6cc;
   --glow: #3c9be6;
-  --ok: #23955f;
-  --ok-soft: #dcf1e6;
-  --warn: #b26a12;
-  --warn-soft: #f7ead6;
-  --danger: #c8433e;
-  --danger-soft: #f8e0df;
+  --ok: #1a7449;
+  --ok-soft: #d2dcc0;
+  --warn: #8f540b;
+  --warn-soft: #edd3ae;
+  --danger: #ad3530;
+  --danger-soft: #efcfc4;
   /* Legacy names some rules and components still reference. */
   --yellow: var(--accent);
   --cyan: var(--ok);
@@ -267,10 +267,27 @@ h3 {
   font-size: 13px;
   font-weight: 650;
 }
-.live-summary .refresh-button {
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
   padding: 0;
-  width: 46px;
-  height: 46px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+.topbar-refresh {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: var(--raise-sm);
+  color: var(--accent);
 }
 
 /* ---------- Shell ---------- */
@@ -479,18 +496,13 @@ main {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 22px;
+  margin-bottom: 14px;
 }
 .live-title-row {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 10px 16px;
-  margin-bottom: 10px;
-}
-.live-summary h1 {
-  margin: 0;
-  font-size: 30px;
 }
 .live-status {
   display: inline-flex;
@@ -591,35 +603,60 @@ main {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 22px;
 }
+/* Pin Front Drive top-left and Backyard - Up top-right at every column
+   count; the remaining tiles auto-place around them in list order. */
+.camera-grid > .scene-05 {
+  grid-row: 1;
+  grid-column: 1;
+}
+.camera-grid > .scene-02 {
+  grid-row: 1;
+  grid-column: -2;
+}
+/* Tiles are pressed into the surface: an inset well with the feed inside. */
 .camera-card {
   position: relative;
   min-width: 0;
-  padding: 8px;
+  padding: 9px;
   border-radius: var(--r-lg);
   background: var(--surface);
-  box-shadow: var(--raise);
+  box-shadow: var(--inset);
   text-align: left;
-  transition:
-    transform 0.2s,
-    box-shadow 0.2s;
+  transition: box-shadow 0.2s;
 }
 .camera-card:hover {
-  transform: translateY(-2px);
+  box-shadow:
+    inset 5px 5px 11px var(--shade),
+    inset -5px -5px 11px var(--light);
 }
 .camera-card:active {
-  transform: none;
-  box-shadow: var(--raise-sm);
+  box-shadow:
+    inset 6px 6px 13px var(--shade),
+    inset -6px -6px 13px var(--light);
 }
 .camera-visual {
   position: relative;
   aspect-ratio: 1.55;
   overflow: hidden;
   border-radius: 19px;
-  background: linear-gradient(150deg, #dde4ec, #c9d2dd);
+  background: linear-gradient(150deg, #e1cdb1, #c9ad88);
 }
 .camera-snapshot {
   z-index: 1;
   object-fit: cover;
+}
+/* Shade the feed's top-left edge so the image reads as sunk into the well.
+   Sits above the snapshot (same z-index, later in paint order), below pills. */
+.camera-visual::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  box-shadow:
+    inset 3px 3px 8px #3b2a1b38,
+    inset -2px -2px 6px #f7ecdc30;
+  pointer-events: none;
 }
 .scene {
   position: absolute;
@@ -645,35 +682,17 @@ main {
   align-items: center;
   gap: 6px;
 }
-.channel,
 .feed-state,
 .camera-info h3 {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   border-radius: 999px;
-  background: #ffffffd9;
+  background: #f7ecdcd9;
   -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
-  box-shadow: 0 2px 8px #1f2a3722;
+  box-shadow: 0 2px 8px #3b2a1b22;
   color: var(--text);
-}
-.channel {
-  padding: 5px 10px;
-  font-size: 11px;
-  font-weight: 700;
-}
-.channel:before {
-  content: "";
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--ok);
-  box-shadow: 0 0 0 2px var(--ok-soft);
-}
-.camera-card.offline .channel:before {
-  background: var(--faint);
-  box-shadow: none;
 }
 .feed-state {
   padding: 5px 9px;
@@ -706,9 +725,12 @@ main {
 .camera-info h3 {
   max-width: 100%;
   margin: 0;
-  padding: 7px 13px;
-  font-size: 13px;
-  font-weight: 700;
+  gap: 4px;
+  padding: 4px 9px;
+  font-size: 11px;
+  font-weight: 600;
+  background: #f7ecdc99;
+  box-shadow: 0 1px 4px #3b2a1b1a;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -726,10 +748,10 @@ main {
   height: 36px;
   flex-shrink: 0;
   border-radius: 50%;
-  background: #ffffffd9;
+  background: #f7ecdcd9;
   -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
-  box-shadow: 0 2px 8px #1f2a3722;
+  box-shadow: 0 2px 8px #3b2a1b22;
   color: var(--accent);
 }
 .snapshot-fallback {
@@ -739,12 +761,12 @@ main {
   z-index: 2;
   padding: 4px 9px;
   border-radius: 999px;
-  background: #ffffffd9;
+  background: #f7ecdcd9;
   color: var(--warn);
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.04em;
-  box-shadow: 0 2px 8px #1f2a3722;
+  box-shadow: 0 2px 8px #3b2a1b22;
 }
 .inventory-note {
   display: flex;
@@ -1432,7 +1454,7 @@ dd {
   height: 80px;
   overflow: hidden;
   border-radius: var(--r-sm);
-  background: linear-gradient(150deg, #dde4ec, #c9d2dd);
+  background: linear-gradient(150deg, #e1cdb1, #c9ad88);
 }
 .animal-event-image img {
   object-fit: cover;
@@ -1444,7 +1466,7 @@ dd {
   z-index: 1;
   padding: 2px 7px;
   border-radius: 999px;
-  background: #ffffffe0;
+  background: #f7ecdce0;
   color: var(--accent);
   font-size: 10px;
   font-weight: 700;
@@ -1665,11 +1687,11 @@ dialog {
   background: var(--surface);
   color: var(--text);
   box-shadow:
-    0 30px 70px #1f2a3740,
+    0 30px 70px #3b2a1b40,
     var(--raise);
 }
 dialog::backdrop {
-  background: #2a364666;
+  background: #3b2a1b66;
   -webkit-backdrop-filter: blur(6px);
   backdrop-filter: blur(6px);
 }
@@ -2101,7 +2123,8 @@ dialog::backdrop {
     width: 42px;
     height: 42px;
   }
-  .avatar {
+  .avatar,
+  .topbar-refresh {
     width: 40px;
     height: 40px;
   }
@@ -2131,10 +2154,7 @@ dialog::backdrop {
   }
   .live-summary {
     align-items: flex-start;
-    margin-bottom: 16px;
-  }
-  .live-summary h1 {
-    font-size: 26px;
+    margin-bottom: 12px;
   }
   .section-top {
     display: none;
@@ -2143,9 +2163,11 @@ dialog::backdrop {
     gap: 14px;
   }
   .camera-card {
-    padding: 6px;
+    padding: 7px;
     border-radius: 22px;
-    box-shadow: var(--raise-sm);
+    box-shadow:
+      inset 3px 3px 7px var(--shade),
+      inset -3px -3px 7px var(--light);
   }
   .camera-visual {
     aspect-ratio: 1.15;
@@ -2156,10 +2178,6 @@ dialog::backdrop {
     left: 7px;
     right: 7px;
   }
-  .channel {
-    padding: 4px 8px;
-    font-size: 10px;
-  }
   .feed-state {
     display: none;
   }
@@ -2169,8 +2187,8 @@ dialog::backdrop {
     bottom: 13px;
   }
   .camera-info h3 {
-    padding: 6px 10px;
-    font-size: 12px;
+    padding: 3px 8px;
+    font-size: 10px;
   }
   .camera-info h3 svg {
     display: none;
@@ -2207,11 +2225,11 @@ dialog::backdrop {
     gap: 6px;
     padding: 8px;
     border-radius: 28px;
-    background: #e8edf3eb;
+    background: #e6d5bdeb;
     -webkit-backdrop-filter: blur(16px);
     backdrop-filter: blur(16px);
     box-shadow:
-      0 10px 30px #1f2a3729,
+      0 10px 30px #3b2a1b29,
       -6px -6px 16px var(--light);
   }
   .bottom-nav button {
@@ -2399,7 +2417,7 @@ dialog::backdrop {
     display: none;
   }
   .camera-dialog .dialog-header button {
-    background: #ffffffd9;
+    background: #f7ecdcd9;
     box-shadow: 0 2px 8px #0005;
     color: var(--text);
     pointer-events: auto;

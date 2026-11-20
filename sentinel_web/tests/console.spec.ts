@@ -8,6 +8,11 @@ test("iPhone camera grid shows every camera without horizontal overflow", async 
   ).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "Live cameras" }),
+  ).toBeAttached();
+  await expect(
+    page.locator(".topbar").getByRole("button", {
+      name: "Refresh connection and IVSEC status",
+    }),
   ).toBeVisible();
   await expect(page.locator(".camera-card")).toHaveCount(8);
   await expect(page.getByText("SNAPSHOT / 1S")).toHaveCount(0);
@@ -449,13 +454,11 @@ test("dashboard retains good frames and recovers from slow fallback snapshots", 
   await page.goto("/");
   const image=page.getByRole("img",{name:"Latest snapshot from Front Door"});
   await expect(image).toBeVisible();
-  await expect(page.getByText("RECORDER PREVIEW",{exact:true})).toHaveCount(1);
   const previous=await image.getAttribute("src");
   fail=true;
   await expect.poll(()=>failedResponses).toBeGreaterThan(0);
   await expect(image).toHaveAttribute("src",previous!);
   source="frigate";fail=false;
-  await expect(page.getByText("RECORDER PREVIEW",{exact:true})).toHaveCount(0);
   await expect(image).toBeVisible();
 });
 

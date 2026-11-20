@@ -15,7 +15,6 @@ export function Snapshot({
 }) {
   const [current, setCurrent] = useState("");
   const currentUrl = useRef("");
-  const [fallback, setFallback] = useState(false);
   const [stale, setStale] = useState(false);
 
   useEffect(() => {
@@ -58,7 +57,6 @@ export function Snapshot({
         const previous = currentUrl.current;
         currentUrl.current = objectUrl;
         setCurrent(objectUrl);
-        setFallback(response.headers.get("X-Snapshot-Source") === "recorder");
         lastFrame = Date.now();
         setStale(false);
         if (previous)
@@ -100,19 +98,12 @@ export function Snapshot({
         sizes="(max-width: 700px) 50vw, (max-width: 1200px) 33vw, 25vw"
         unoptimized
       />
-      {stale ? (
+      {stale && (
         <span
           className="snapshot-fallback"
           title="No new frame for over 20 seconds. Frigate may be offline; showing the last image received."
         >
           PAUSED
-        </span>
-      ) : fallback && (
-        <span
-          className="snapshot-fallback"
-          title="Frigate preview unavailable. This image comes directly from the recorder; check detector health."
-        >
-          RECORDER PREVIEW
         </span>
       )}
     </>

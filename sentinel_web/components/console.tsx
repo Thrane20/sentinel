@@ -201,6 +201,22 @@ export function Console() {
               <Wifi size={14} /> LOCAL NETWORK
             </span>
             <span className="time">{time}</span>
+            {tab === "live" && (
+              <button
+                className="topbar-refresh"
+                aria-label="Refresh connection and IVSEC status"
+                title="Refresh"
+                onClick={() => {
+                  setRefreshing(true);
+                  void refresh();
+                  setSnapshotTick(Date.now());
+                  setSecurityRefresh((n) => n + 1);
+                }}
+                disabled={refreshing}
+              >
+                <RefreshCw size={16} className={refreshing ? "spin" : ""} />
+              </button>
+            )}
             <span className="avatar">IS</span>
           </div>
         </header>
@@ -295,7 +311,7 @@ export function Console() {
               <div className="live-summary">
                 <div>
                   <div className="live-title-row">
-                    <h1>Live cameras</h1>
+                    <h1 className="sr-only">Live cameras</h1>
                     <RecorderSecurity refreshSignal={securityRefresh} />
                   </div>
                   {(healthError || (health && !health.configured)) && (
@@ -307,19 +323,6 @@ export function Console() {
                     </span>
                   )}
                 </div>
-                <button
-                  className="refresh-button"
-                  aria-label="Refresh connection and IVSEC status"
-                  onClick={() => {
-                    setRefreshing(true);
-                    void refresh();
-                    setSnapshotTick(Date.now());
-                    setSecurityRefresh((n) => n + 1);
-                  }}
-                  disabled={refreshing}
-                >
-                  <RefreshCw size={15} className={refreshing ? "spin" : ""} />
-                </button>
               </div>
               <div className="section-top">
                 <div>
@@ -344,7 +347,6 @@ export function Console() {
                   >
                     <div className="camera-visual">
                       <div className="camera-top">
-                        <span className="channel">CH {camera.id}</span>
                         {!camera.seen && (
                           <span className="feed-state">
                             <span /> PREVIOUSLY OFFLINE
@@ -368,7 +370,7 @@ export function Console() {
                     <div className="camera-info">
                       <div>
                         <h3>
-                          <CameraIcon size={13} aria-hidden="true" />
+                          <CameraIcon size={11} aria-hidden="true" />
                           {camera.name}
                         </h3>
                         <p>
