@@ -174,6 +174,28 @@ test("playback lists and clears collected IVSEC alerts", async ({ page }) => {
     ),
   ).toBe(true);
 });
+test("animals screen has no status tiles and warns only when the detector is down", async ({ page }) => {
+  let frigateOnline = true;
+  await page.route("**/api/health", (route) =>
+    route.fulfill({ json: { configured: true, host: "recorder.local", animals: { online: true, mqttOnline: true, frigateOnline,
+      model: "MDV6-mit-yolov9-c", provider: "GPU", inferenceSpeedMs: 14.2, alertsConfigured: true, alertsEnabled: true, enabledCameras: 2 } } }));
+  await page.route("**/api/animals/settings", (route) =>
+    route.fulfill({ json: { globalEnabled: true, alertsEnabled: true, cooldownSeconds: 30, maxEventsPerHour: 5, cameras: {} } }));
+  await page.route("**/api/animals/events?*", (route) => route.fulfill({ json: { events: [], nextBefore: null } }));
+  const openAnimals = async () => {
+    await page.goto("/");
+    await page.getByRole("navigation", { name: "Mobile navigation" }).getByRole("button", { name: "Animals" }).click();
+    await expect(page.getByRole("heading", { name: "Perimeter life signs." })).toBeVisible();
+  };
+  await openAnimals();
+  await expect(page.getByLabel("Detector status")).toHaveCount(0);
+  await expect(page.getByText("INFERENCE", { exact: true })).toHaveCount(0);
+  await expect(page.getByText(/Animal detector is offline/)).toHaveCount(0);
+  frigateOnline = false;
+  await openAnimals();
+  await expect(page.getByText(/Animal detector is offline/)).toBeVisible();
+});
+
 test("animal detection has an iPhone-ready offline state", async ({ page }) => {
   await page.goto("/");
   await page

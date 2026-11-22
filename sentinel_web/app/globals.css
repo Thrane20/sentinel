@@ -848,15 +848,13 @@ footer .yellow-text {
 }
 
 /* ---------- Stat strips (System, Animals) ---------- */
-.stats,
-.animal-status-grid {
+.stats {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 18px;
   margin-bottom: 26px;
 }
-.stats > div,
-.animal-status-grid > div {
+.stats > div {
   display: flex;
   align-items: center;
   gap: 14px;
@@ -867,8 +865,7 @@ footer .yellow-text {
   background: var(--surface);
   box-shadow: var(--raise-sm);
 }
-.stat-icon,
-.animal-status-grid > div > svg {
+.stat-icon {
   display: grid;
   place-items: center;
   width: 44px;
@@ -879,20 +876,10 @@ footer .yellow-text {
   color: var(--accent);
   flex-shrink: 0;
 }
-.animal-status-grid > div {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  row-gap: 1px;
-}
-.animal-status-grid > div > svg {
-  grid-row: 1 / 4;
-}
 .stat-icon.cyan {
   color: var(--ok);
 }
-.stats label,
-.animal-status-grid span,
-.animal-status-grid small {
+.stats label {
   display: block;
   color: var(--muted);
   font-size: 11px;
@@ -902,16 +889,11 @@ footer .yellow-text {
 .stats label {
   margin-bottom: 4px;
 }
-.stats strong,
-.animal-status-grid strong {
+.stats strong {
   display: block;
   font-size: 22px;
   font-weight: 750;
   letter-spacing: -0.01em;
-}
-.animal-status-grid strong {
-  margin: 2px 0;
-  font-size: 18px;
 }
 .stats strong small {
   margin-left: 4px;
@@ -2366,25 +2348,17 @@ dialog::backdrop {
     border-radius: 24px;
     box-shadow: var(--raise-sm);
   }
-  .stats,
-  .animal-status-grid {
+  .stats {
     grid-template-columns: 1fr;
     gap: 12px;
     margin-bottom: 20px;
   }
-  .stats > div,
-  .animal-status-grid > div {
+  .stats > div {
     padding: 12px 14px;
   }
   .stats strong,
-  .animal-status-grid strong,
   .stats .status-text {
     font-size: 16px;
-  }
-  .animal-status-grid > div > svg {
-    width: 40px;
-    height: 40px;
-    padding: 10px;
   }
   .animal-event {
     grid-template-columns: 96px 1fr auto;

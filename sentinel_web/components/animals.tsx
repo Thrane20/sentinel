@@ -9,7 +9,6 @@ import {
   Bell,
   Check,
   ChevronDown,
-  Cpu,
   ExternalLink,
   PawPrint,
   Play,
@@ -319,46 +318,14 @@ export function Animals({
         </button>
       </div>
 
-      <section className="animal-status-grid" aria-label="Detector status">
-        <div>
-          <Cpu />
-          <span>DETECTOR</span>
-          <strong
-            className={health?.frigateOnline ? "cyan-text" : "yellow-text"}
-          >
-            {health?.frigateOnline ? "Online" : "Offline"}
-          </strong>
-          <small>
-            {health?.provider || "AUTO"} / {health?.model || "MegaDetector V6"}
-          </small>
-        </div>
-        <div>
-          <Radio />
-          <span>INFERENCE</span>
-          <strong>
-            {health?.inferenceSpeedMs
-              ? `${health.inferenceSpeedMs.toFixed(1)} ms`
-              : "Waiting"}
-          </strong>
-          <small>
-            {health?.mqttOnline ? "Event bus connected" : "Event bus offline"}
-          </small>
-        </div>
-        <div>
-          <Bell />
-          <span>HOME ASSISTANT</span>
-          <strong
-            className={health?.alertsConfigured ? "cyan-text" : "yellow-text"}
-          >
-            {health?.alertsConfigured
-              ? settings?.alertsEnabled
-                ? "Live"
-                : "Shadow"
-              : "Not set"}
-          </strong>
-          <small>{settings?.cooldownSeconds ?? 30}s cooldown per camera</small>
-        </div>
-      </section>
+      {health && (!health.frigateOnline || !health.mqttOnline) && (
+        <p className="notice animal-notice" role="status">
+          <AlertTriangle size={16} />{" "}
+          {!health.frigateOnline
+            ? "Animal detector is offline. New detections will not appear until Frigate is back."
+            : "Detector event bus is offline. Detections will not be recorded until MQTT reconnects."}
+        </p>
+      )}
 
       {error && (
         <p className="notice animal-notice" role="alert">
