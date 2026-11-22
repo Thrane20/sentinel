@@ -219,6 +219,23 @@ class AnimalWorkerTests(unittest.TestCase):
     def test_recorder_retry_delay_backs_off_to_two_minutes(self):
         self.assertEqual([worker.ivsec_retry_delay(n) for n in (1,2,3,4,5,6,10)],[5,10,20,40,80,120,120])
 
+    def test_ivsec_session_sends_cookie_over_http_and_counts_logins(self):
+        from unittest.mock import MagicMock
+        from http.cookiejar import Cookie
+        def fake_post(self_session, url, **kwargs):
+            self_session.cookies.set_cookie(Cookie(0,"session","abc",None,False,"10.0.0.9",False,False,"/",True,True,None,False,None,None,{}))
+            response=MagicMock();response.headers={"X-csrftoken":"token"};return response
+        before=dict(worker.IVSEC_SESSION_STATS)
+        with patch.object(worker,"IVSEC_HOST","10.0.0.9"),patch.object(worker.requests.Session,"post",fake_post,create=True):
+            base,session=worker.ivsec_session()
+        request=session.prepare_request(worker.requests.Request("POST",f"{base}/API/Web/Logout"))
+        self.assertEqual(request.headers.get("Cookie"),"session=abc")
+        self.assertEqual(worker.IVSEC_SESSION_STATS["logins"],before["logins"]+1)
+        session.post=MagicMock()
+        worker.ivsec_logout(base,session);worker.ivsec_logout(base,session)
+        self.assertEqual(worker.IVSEC_SESSION_STATS["logouts"],before["logouts"]+1)
+        self.assertEqual(worker.ivsec_worker_stats()["workerSessions"],worker.IVSEC_SESSION_STATS["logins"]-worker.IVSEC_SESSION_STATS["logouts"])
+
     def test_ivsec_logout_releases_login_and_tolerates_failure(self):
         from unittest.mock import MagicMock
         session=MagicMock()

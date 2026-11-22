@@ -9,5 +9,5 @@ export async function GET(
 ) {
   const { channel } = await context.params;
   const at = Number(new URL(request.url).searchParams.get("at"));
-  return recordedClip(channel, at, request.signal);
+  return recordedClip(channel, at, request);
 }

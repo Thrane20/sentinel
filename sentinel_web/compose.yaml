@@ -104,6 +104,23 @@ services:
       retries: 3
       start_period: 10s
 
+  # Restarts the services holding recorder connections shortly after the
+  # recorder's own daily 07:10 auto-reboot. Set SENTINEL_DAILY_RESTART (HH:MM,
+  # host local time) in .env.local to change it. Needs the Docker socket, which
+  # is root-equivalent on the host: it only runs the restart loop in
+  # scripts/daily-restart.sh.
+  daily-restart:
+    image: docker:27.5.1-cli
+    restart: unless-stopped
+    entrypoint: ["sh", "/daily-restart.sh"]
+    environment:
+      RESTART_AT: ${SENTINEL_DAILY_RESTART:-07:25}
+      RESTART_SERVICES: frigate animal-alert-worker sentinel
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /etc/localtime:/etc/localtime:ro
+      - ./scripts/daily-restart.sh:/daily-restart.sh:ro
+
 volumes:
   animal-data:
   animal-models:

@@ -27,6 +27,7 @@ import { Player } from "./player";
 import { RecordedPlayer } from "./recorded-player";
 import { Snapshot } from "./snapshot";
 import { CpuActivity } from "./cpu-activity";
+import { RecorderLoad } from "./recorder-load";
 import { RecorderEventsSettings } from "./recorder-events-settings";
 import { RecorderSecurity } from "./recorder-security";
 import { parsePlaybackLink } from "@/lib/playback-link";
@@ -491,6 +492,7 @@ export function Console() {
             <>
               <RecorderEventsSettings />
               <CpuActivity />
+              <RecorderLoad />
               <div className="system-grid">
                 <section className="panel">
                   <div className="panel-heading">

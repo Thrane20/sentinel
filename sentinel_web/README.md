@@ -136,6 +136,12 @@ Playing an animal detection, a recorder-generated IVSEC alert, or a manually sel
 
 Host health means credentials are configured, not that the recorder is online or authenticated. Opening a camera performs the real connection attempt. Authentication/network/codec errors are reported in the player. Channel 1 was verified end to end through the Docker container on 7 September 2026: the app generated HLS segments and played the real camera at 1280×720. The remaining inferred channel paths still need individual checks on the target Linux host.
 
+## Recorder load and daily restart
+
+**System → Recorder load** samples the recorder's own streaming budget once a minute (`POST /API/SystemInfo/Network/Get`, `bandwidth.used_bandwidth` against `total_bandwidth`). It shows that budget next to what Sentinel itself holds open: recorder connections in Frigate's go2rtc (`/api/go2rtc/streams`), worker web logins not yet logged out, and `Event/Check` calls per minute. The page warns at 85% of the budget, when usage climbs more than 8 Mbps in an hour without new Sentinel streams, and when the worker holds more than five logins. The worker logs a summary every 10 minutes and whenever a warning appears or clears (`pnpm docker:logs`), and keeps 24 hours of samples in memory. This is diagnostic only. The recorder exposes no session list, so nothing can be closed on it remotely.
+
+The recorder auto-reboots daily at 07:10 (`Maintenance/AutoReboot`). The `daily-restart` Compose service restarts `frigate`, `animal-alert-worker` and `sentinel` at 07:25 host time, so go2rtc, the worker's logins and any live-view FFmpeg reconnect cleanly after the reboot. Set `SENTINEL_DAILY_RESTART=HH:MM` in `.env.local` to move it. The service mounts the Docker socket, which is root-equivalent on the host, and runs only `scripts/daily-restart.sh`.
+
 ## Development checks
 
 ```sh

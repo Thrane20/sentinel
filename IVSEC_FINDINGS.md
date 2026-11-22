@@ -360,3 +360,14 @@ Interpretation:
 Read-only inspection confirmed `POST /API/AlarmConfig/Disarming/Range` and `/Get` using the authenticated Digest/session/CSRF flow. `/Get` returns `data.disarming` as a boolean, with `action`, `disarming_channel` and per-channel schedules. The inspected recorder reported false and selected all 16 channels.
 
 The vendor frontend saves to `/API/AlarmConfig/Disarming/Set` with `{"version":"1.0","data":<complete current configuration>}`. Sentinel preserves that configuration and changes only `disarming`, then confirms it through `/Get`. Live writes were not performed during development; the change and failure paths were tested against simulated recorder responses. The global flag is not an independent audit of every channel's arming schedule.
+
+## Connection behaviour (22 November 2026)
+
+Read-only checks against the recorder's current firmware, each through one login that was then logged out:
+
+- **`Event/Check` is a long-poll.** After the subscribing call, which returns current state immediately, each cursor call is held about 9.1 s when nothing happens and returns at once when an alarm arrives. Steady state is about 6–7 requests a minute from one login, not 10 a second.
+- **The session cookie is not `Secure` over HTTP** (`Set-Cookie: session=…; HttpOnly; path=/`). `requests` sends it, and `/API/Web/Logout` releases the login: a repeat logout with the same cookie returns `400 {"error_code":"logout"}`. Sentinel now clears the flag anyway, in case other firmware sets it.
+- **`SystemInfo/Network/Get`** reports a streaming budget as `bandwidth.total_bandwidth` and `bandwidth.used_bandwidth` (Kbps strings such as `"50000Kbps"`), plus a per-service port list.
+- **`Maintenance/AutoReboot/Get`**: `auto_reboot: true`, `EveryDay`, `07:10`.
+- **No session control.** The web bundles reference no online-user, connection-list or kick-session endpoint; `SystemConfig/User` is account management only.
+- **HTTP push ("HTTP Listening").** In April the recorder sent `POST /API/HttpListening/KeepLive` every 60 s to the configured listener, but no alarm payload was ever captured. Its alarm format, retry behaviour and authentication are unknown.

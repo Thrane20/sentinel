@@ -10,6 +10,8 @@ COPY services/animal-worker/recorder_security.py ./recorder_security.py
 COPY services/animal-worker/test_recorder_security.py ./test_recorder_security.py
 COPY services/animal-worker/test_worker.py ./test_worker.py
 COPY services/animal-worker/cpu_monitor.py ./cpu_monitor.py
+COPY services/animal-worker/recorder_load.py ./recorder_load.py
+COPY services/animal-worker/test_recorder_load.py ./test_recorder_load.py
 COPY services/animal-worker/test_cpu_monitor.py ./test_cpu_monitor.py
 ENV PYTHONUNBUFFERED=1
 CMD ["python", "/app/worker.py"]

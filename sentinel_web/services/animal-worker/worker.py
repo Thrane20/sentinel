@@ -19,6 +19,7 @@ from requests.auth import HTTPDigestAuth
 from recorder_security import RecorderSecurity, RecorderSecurityError, StateChanged
 from ivsec_notifications import IvsecNotifications, observed_at
 from recorder_events import RecorderEvents, EVENTS
+from recorder_load import RecorderLoadMonitor
 
 CPU_MONITOR = CpuMonitor()
 
@@ -53,6 +54,11 @@ FRIGATE_ONLINE = False
 IVSEC_EVENTS_ONLINE = False
 IVSEC_EVENTS_ERROR = "Waiting for recorder"
 IVSEC_EVENTS_LAST_POLL = None
+# Recorder web logins this worker has opened and released, and Event/Check
+# calls made, for the recorder-load monitor.
+IVSEC_SESSION_STATS = {"logins": 0, "logouts": 0}
+IVSEC_CHECK_TIMES = []
+IVSEC_STATS_LOCK = threading.Lock()
 SUPPRESSED_EVENT_IDS = set()
 SUPPRESSED_LOCK = threading.RLock()
 
@@ -1052,6 +1058,13 @@ def ivsec_session():
         session.close()
         raise
     session.headers["X-csrftoken"] = token
+    # Some firmware marks the session cookie Secure even on its HTTP listener;
+    # requests would then silently omit it, and Logout could not release it.
+    for cookie in session.cookies:
+        cookie.secure = False
+    session.sentinel_logged_in = True
+    with IVSEC_STATS_LOCK:
+        IVSEC_SESSION_STATS["logins"] += 1
     return base, session
 
 
@@ -1060,6 +1073,10 @@ def ivsec_logout(base, session):
     every session Sentinel opens must be logged out, not just dropped."""
     if session is None:
         return
+    if getattr(session, "sentinel_logged_in", False):
+        session.sentinel_logged_in = False
+        with IVSEC_STATS_LOCK:
+            IVSEC_SESSION_STATS["logouts"] += 1
     try:
         session.post(f"{base}/API/Web/Logout", json={}, timeout=3)
     except requests.RequestException:
@@ -1076,6 +1093,21 @@ def ivsec_retry_delay(failures):
 
 RECORDER_SECURITY = RecorderSecurity(ivsec_session, lambda: bool(IVSEC_USERNAME and IVSEC_PASSWORD), ivsec_logout)
 RECORDER_EVENTS = RecorderEvents(ivsec_session, lambda: bool(IVSEC_USERNAME and IVSEC_PASSWORD), ivsec_logout)
+
+
+def ivsec_worker_stats():
+    now = time.time()
+    with IVSEC_STATS_LOCK:
+        IVSEC_CHECK_TIMES[:] = [t for t in IVSEC_CHECK_TIMES if t > now - 60]
+        return {
+            "workerSessions": IVSEC_SESSION_STATS["logins"] - IVSEC_SESSION_STATS["logouts"],
+            "workerLogins": IVSEC_SESSION_STATS["logins"],
+            "eventChecksPerMinute": len(IVSEC_CHECK_TIMES),
+        }
+
+
+RECORDER_LOAD = RecorderLoadMonitor(ivsec_session, ivsec_logout, lambda: bool(IVSEC_USERNAME and IVSEC_PASSWORD),
+                                    FRIGATE_URL, ivsec_worker_stats)
 
 
 def ivsec_playback_params(camera_id, detected_at):
@@ -1233,11 +1265,14 @@ def ivsec_event_collector():
             IVSEC_EVENTS_LAST_POLL = time.time()
 
             while True:
+                started = time.monotonic()
                 response = session.post(
                     f"{base}/API/Event/Check",
                     json={"version": "1.0", "data": cursor},
                     timeout=20,
                 )
+                with IVSEC_STATS_LOCK:
+                    IVSEC_CHECK_TIMES.append(time.time())
                 response.raise_for_status()
                 data = response.json().get("data") or {}
                 if all(key in data for key in ("reader_id", "sequence", "lap_number")):
@@ -1247,7 +1282,12 @@ def ivsec_event_collector():
                 IVSEC_EVENTS_ERROR = ""
                 IVSEC_EVENTS_LAST_POLL = time.time()
                 failures = 0
-                time.sleep(0.1)
+                # Event/Check is a long-poll: with nothing to report the
+                # recorder holds it ~9s, so a short pause is enough. If it ever
+                # answers instantly with nothing (firmware change, reader
+                # reset), back off instead of spinning at 10 requests/second.
+                quick_and_empty = not data.get("alarm_list") and time.monotonic() - started < 1
+                time.sleep(1 if quick_and_empty else 0.1)
         except Exception as error:
             IVSEC_EVENTS_ONLINE = False
             IVSEC_EVENTS_ERROR = str(error)[:180]
@@ -1360,6 +1400,8 @@ class Handler(BaseHTTPRequestHandler):
                                             "error": "IVSEC status unavailable. Check recorder connectivity and credentials."})
         if self.path == "/system/cpu":
             return self.send_json(200, CPU_MONITOR.payload())
+        if self.path == "/system/recorder-load":
+            return self.send_json(200, RECORDER_LOAD.payload())
         if self.path.startswith("/quality/"):
             try:
                 return self.send_json(200, detection_quality(self.path.split("/")[-1]))
@@ -1536,6 +1578,8 @@ def start_mqtt():
 
 if __name__ == "__main__":
     CPU_MONITOR.start()
+    if IVSEC_USERNAME and IVSEC_PASSWORD:
+        RECORDER_LOAD.start()
     initialize()
     start_mqtt()
     threading.Thread(target=reconcile_existing_events, daemon=True).start()

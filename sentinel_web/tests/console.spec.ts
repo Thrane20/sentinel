@@ -33,6 +33,27 @@ test("iPhone camera grid shows every camera without horizontal overflow", async 
     ),
   ).toBe(true);
 });
+test("live view has no playback controls and shows a spinner until video arrives", async ({ page }) => {
+  let mode = "warming";
+  await page.route("**/api/stream/**", (route) =>
+    mode === "warming"
+      ? route.fulfill({ status: 503, json: { error: "Stream is warming up. Try again shortly." } })
+      : route.fulfill({ status: 502, json: { error: "Stream unavailable. Check FFmpeg, recorder credentials, and network access." } }),
+  );
+  await page.goto("/");
+  await page.locator(".camera-card").first().click();
+  const dialog = page.getByRole("dialog");
+  const video = dialog.getByLabel("Live camera video");
+  await expect(video).toBeVisible();
+  expect(await video.getAttribute("controls")).toBeNull();
+  await expect(dialog.getByRole("status").filter({ hasText: "Connecting to camera…" })).toBeVisible();
+  mode = "failed";
+  await dialog.getByRole("button", { name: "Close" }).first().click();
+  await page.locator(".camera-card").first().click();
+  await expect(dialog.getByText(/Stream unavailable/)).toBeVisible();
+  await expect(dialog.getByText("Connecting to camera…")).toHaveCount(0);
+});
+
 test("camera dialog reports missing credentials and restores focus", async ({
   page,
 }) => {
@@ -483,6 +504,32 @@ test("System reports CPU averages, warmup, refresh and unavailable state", async
   mode="warm";
   await expect(page.getByText("Collecting the first CPU sample…")).toBeVisible({timeout:10000});
   expect(requests).toBeGreaterThanOrEqual(3);
+});
+
+test("System shows recorder bandwidth budget, Sentinel connections and warnings", async ({page}) => {
+  let mode="ready";
+  await page.route("**/api/system/recorder-load", route => {
+    if(mode==="error")return route.fulfill({status:503,json:{error:"Unavailable"}});
+    const now=Date.now()/1000;
+    return route.fulfill({json:{configured:true,peakUsedKbps:98304,hourChangeKbps:mode==="warn"?20480:-1024,
+      latest:{at:now,usedKbps:mode==="warn"?98304:47616,totalKbps:114688,recorderStreams:7,viewers:9,workerSessions:4,eventChecksPerMinute:6},
+      history:[{at:now-7200,usedKbps:40960,recorderStreams:7},{at:now,usedKbps:47616,recorderStreams:7}],
+      recorderError:null,frigateError:null,
+      warnings:mode==="warn"?["Recorder streaming budget is 86% used"]:[]}});
+  });
+  await page.goto("/");
+  await page.getByRole("navigation",{name:"Mobile navigation"}).getByRole("button",{name:"System"}).click();
+  await expect(page.getByRole("heading",{name:"Recorder load"})).toBeVisible();
+  await expect(page.getByLabel("Recorder bandwidth used",{exact:true})).toHaveText("42%");
+  await expect(page.getByText("46.5 Mbps of 112.0 Mbps")).toBeVisible();
+  await expect(page.getByLabel("Recorder streams",{exact:true})).toHaveText("7");
+  await expect(page.getByLabel("Worker recorder logins",{exact:true})).toHaveText("4");
+  await expect(page.getByRole("img",{name:/Recorder bandwidth over the last 2 hours/})).toBeVisible();
+  mode="warn";
+  await page.reload();
+  await page.getByRole("navigation",{name:"Mobile navigation"}).getByRole("button",{name:"System"}).click();
+  await expect(page.getByRole("alert").filter({hasText:"Recorder streaming budget is 86% used"})).toBeVisible();
+  await expect(page.getByLabel("Recorder bandwidth used",{exact:true})).toHaveText("86%");
 });
 
 test("notification playback links open the original recording without event metadata", async ({page}) => {

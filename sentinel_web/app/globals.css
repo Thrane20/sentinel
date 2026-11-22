@@ -1782,6 +1782,47 @@ dialog::backdrop {
   height: 100%;
   object-fit: contain;
 }
+/* Live view: no native controls, so hide WebKit's own play overlay too. */
+.player video::-webkit-media-controls,
+.player video::-webkit-media-controls-start-playback-button {
+  display: none !important;
+}
+.player-loading,
+.player-start {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: #f4ead9;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.player-loading {
+  pointer-events: none;
+  background: #111820b3;
+}
+.player-loading svg {
+  opacity: 0.9;
+}
+.player-start {
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  background: #111820cc;
+  box-shadow: none;
+  cursor: pointer;
+}
+.player-start svg {
+  width: 64px;
+  height: 64px;
+  padding: 17px;
+  border-radius: 50%;
+  background: #f4ead926;
+}
 .player-error {
   position: absolute;
   inset: 0;
@@ -1934,6 +1975,70 @@ dialog::backdrop {
   accent-color: var(--accent);
 }
 .cpu-activity > p {
+  font-size: 12px;
+  line-height: 1.6;
+}
+.recorder-load {
+  margin-bottom: 22px;
+}
+.recorder-load .cpu-metrics p {
+  margin: 8px 0 0;
+  font-size: 12px;
+}
+.recorder-load-facts {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  font-size: 13px;
+}
+.recorder-load-facts div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.recorder-load-facts dt {
+  color: var(--muted);
+}
+.recorder-load-facts dd {
+  margin: 0;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.recorder-load-trend {
+  margin: 0 0 12px;
+}
+.recorder-load-trend svg {
+  display: block;
+  width: 100%;
+  height: 56px;
+  border-radius: var(--r-sm);
+  box-shadow: var(--inset-sm);
+}
+.recorder-load-trend path {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+.recorder-load-trend .limit {
+  stroke: var(--warn);
+  stroke-dasharray: 3 3;
+  vector-effect: non-scaling-stroke;
+}
+.recorder-load-trend figcaption {
+  padding-top: 6px;
+  font-size: 12px;
+}
+.recorder-load-warnings {
+  margin: 0 0 12px;
+  padding: 10px 14px 10px 30px;
+  border-radius: var(--r-sm);
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-size: 13px;
+  font-weight: 600;
+}
+.recorder-load > p {
   font-size: 12px;
   line-height: 1.6;
 }

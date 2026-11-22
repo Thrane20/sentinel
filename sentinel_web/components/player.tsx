@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import Hls from "hls.js";
-import { Radio, RotateCcw } from "lucide-react";
+import { LoaderCircle, Play, Radio, RotateCcw } from "lucide-react";
 export function Player({
   channel,
   onState,
@@ -12,6 +12,10 @@ export function Player({
   const video = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
+  // Live video has no scrubber or pause: the only states are loading,
+  // playing, blocked (autoplay refused) and failed.
+  const [loading, setLoading] = useState<"connecting" | "buffering" | null>("connecting");
+  const [blocked, setBlocked] = useState(false);
   useEffect(() => {
     const element = video.current!;
     const controller = new AbortController();
@@ -28,6 +32,7 @@ export function Player({
             hls.attachMedia(element);
             hls.on(Hls.Events.ERROR, (_event, data) => {
               if (data.fatal) {
+                setLoading(null);
                 setError("Video connection lost. Retry the stream.");
                 onState("Unavailable");
                 hls?.destroy();
@@ -50,6 +55,7 @@ export function Player({
     }
     connect().catch((e) => {
       if (!controller.signal.aborted) {
+        setLoading(null);
         setError(e.message);
         onState("Unavailable");
       }
@@ -65,18 +71,53 @@ export function Player({
     <div className="player">
       <video
         ref={video}
-        controls
         autoPlay
         muted
         playsInline
         disableRemotePlayback
-        onPlaying={() => onState("Live")}
-        onWaiting={() => onState("Buffering")}
+        disablePictureInPicture
+        aria-label="Live camera video"
+        onCanPlay={(event) => {
+          // iOS Low Power Mode refuses autoplay; without controls the viewer
+          // would otherwise be left on a spinner.
+          event.currentTarget.play().catch(() => {
+            setLoading(null);
+            setBlocked(true);
+          });
+        }}
+        onPlaying={() => {
+          setLoading(null);
+          setBlocked(false);
+          onState("Live");
+        }}
+        onWaiting={() => {
+          setLoading("buffering");
+          onState("Buffering");
+        }}
         onError={() => {
+          setLoading(null);
           setError("Playback interrupted. Reconnect to try again.");
           onState("Unavailable");
         }}
       />
+      {loading && !error && (
+        <div className="player-loading" role="status">
+          <LoaderCircle className="spin" size={34} aria-hidden="true" />
+          <span>{loading === "connecting" ? "Connecting to camera…" : "Buffering…"}</span>
+        </div>
+      )}
+      {blocked && !error && (
+        <button
+          className="player-start"
+          onClick={() => {
+            setBlocked(false);
+            void video.current?.play().catch(() => setBlocked(true));
+          }}
+        >
+          <Play size={30} aria-hidden="true" />
+          <span>Tap to start live view</span>
+        </button>
+      )}
       {error && (
         <div className="player-error">
           <Radio size={28} />
@@ -85,6 +126,7 @@ export function Player({
             className="primary"
             onClick={() => {
               setError("");
+              setLoading("connecting");
               setAttempt((a) => a + 1);
             }}
           >

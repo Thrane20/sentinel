@@ -61,7 +61,7 @@ Changing a camera's detection toggle travels from the browser through the Next.j
 
 ### 4. Playing recorded camera footage
 
-The camera dialog requests `/api/playback/[channel]?at=<timestamp>`. Next.js starts FFmpeg, which reads a private MP4 stream from the Python worker. The worker authenticates to IVSEC and requests 30 seconds from its continuous recording, beginning five seconds before the selected timestamp. FFmpeg converts the recorder's H.265 substream to a muted 720p H.264 fragmented MP4 for the browser.
+The camera dialog requests `/api/playback/[channel]?at=<timestamp>`. Next.js starts FFmpeg, which reads a private MP4 stream from the Python worker. The worker authenticates to IVSEC and requests 30 seconds from its continuous recording, beginning five seconds before the selected timestamp. FFmpeg converts the recorder's H.265 substream to a complete, muted 720p H.264 MP4 (about 2–4 seconds for a 30-second clip). Next.js keeps up to four clips for five minutes and answers byte-range requests from them. Safari requires range support for MP4 video and makes several requests per clip, and the recorder serves only one download at a time.
 
 Animal events and IVSEC alert rows pass their camera and event timestamp into this same player. Recorder credentials, session cookies, and CSRF tokens remain between the worker and IVSEC.
 
