@@ -1,0 +1,239 @@
+[
+  {
+    "id": "1792567020.700349-vjzt12",
+    "camera": "current",
+    "label": "animal",
+    "zones": [],
+    "start_time": 1792567020.700349,
+    "end_time": null,
+    "has_clip": false,
+    "has_snapshot": true,
+    "plus_id": null,
+    "retain_indefinitely": false,
+    "sub_label": null,
+    "top_score": null,
+    "false_positive": null,
+    "box": null,
+    "data": {
+      "box": [
+        0.15703125,
+        0.2263888888888889,
+        0.05625,
+        0.08055555555555556
+      ],
+      "region": [
+        0.06484375,
+        0.0,
+        0.303125,
+        0.5388888888888889
+      ],
+      "score": 0.8274829983711243,
+      "top_score": 0.8722793757915497,
+      "attributes": [],
+      "average_estimated_speed": 0,
+      "velocity_angle": 0,
+      "type": "object",
+      "max_severity": "detection",
+      "path_data": [
+        [
+          [
+            0.1852,
+            0.3069
+          ],
+          1792567021.900877
+        ],
+        [
+          [
+            0.1852,
+            0.3069
+          ],
+          1792567021.900877
+        ]
+      ]
+    },
+    "thumbnail": null
+  },
+  {
+    "id": "1792566987.531407-aqfu8v",
+    "camera": "relaxed",
+    "label": "animal",
+    "zones": [],
+    "start_time": 1792566987.531407,
+    "end_time": null,
+    "has_clip": false,
+    "has_snapshot": true,
+    "plus_id": null,
+    "retain_indefinitely": false,
+    "sub_label": null,
+    "top_score": null,
+    "false_positive": null,
+    "box": null,
+    "data": {
+      "box": [
+        0.16328125,
+        0.22083333333333333,
+        0.06796875,
+        0.07916666666666666
+      ],
+      "region": [
+        0.0765625,
+        0.03611111111111111,
+        0.25,
+        0.4444444444444444
+      ],
+      "score": 0.8870500326156616,
+      "top_score": 0.8863144516944885,
+      "attributes": [],
+      "average_estimated_speed": 0,
+      "velocity_angle": 0,
+      "type": "object",
+      "max_severity": "detection",
+      "path_data": [
+        [
+          [
+            0.1914,
+            0.3069
+          ],
+          1792566987.531407
+        ],
+        [
+          [
+            0.1891,
+            0.3083
+          ],
+          1792566987.928405
+        ],
+        [
+          [
+            0.1109,
+            0.4125
+          ],
+          1792567013.331389
+        ],
+        [
+          [
+            0.1672,
+            0.3375
+          ],
+          1792567015.523497
+        ]
+      ]
+    },
+    "thumbnail": null
+  },
+  {
+    "id": "1792566987.500771-8ksbto",
+    "camera": "current",
+    "label": "animal",
+    "zones": [],
+    "start_time": 1792566987.500771,
+    "end_time": null,
+    "has_clip": false,
+    "has_snapshot": true,
+    "plus_id": null,
+    "retain_indefinitely": false,
+    "sub_label": null,
+    "top_score": null,
+    "false_positive": null,
+    "box": null,
+    "data": {
+      "box": [
+        0.16796875,
+        0.21944444444444444,
+        0.0640625,
+        0.08055555555555556
+      ],
+      "region": [
+        0.0765625,
+        0.03611111111111111,
+        0.25,
+        0.4444444444444444
+      ],
+      "score": 0.8910753726959229,
+      "top_score": 0.8870493769645691,
+      "attributes": [],
+      "average_estimated_speed": 0,
+      "velocity_angle": 0,
+      "type": "object",
+      "max_severity": "detection",
+      "path_data": [
+        [
+          [
+            0.1914,
+            0.3069
+          ],
+          1792566987.500771
+        ],
+        [
+          [
+            0.1891,
+            0.3083
+          ],
+          1792566987.896963
+        ],
+        [
+          [
+            0.1156,
+            0.4111
+          ],
+          1792567013.50366
+        ]
+      ]
+    },
+    "thumbnail": null
+  },
+  {
+    "id": "1792566970.892024-9n3eom",
+    "camera": "relaxed",
+    "label": "animal",
+    "zones": [],
+    "start_time": 1792566970.892024,
+    "end_time": 1792566978.681948,
+    "has_clip": false,
+    "has_snapshot": false,
+    "plus_id": null,
+    "retain_indefinitely": false,
+    "sub_label": null,
+    "top_score": null,
+    "false_positive": false,
+    "box": [],
+    "data": {
+      "box": [
+        0.15546875,
+        0.225,
+        0.05859375,
+        0.08333333333333333
+      ],
+      "region": [
+        0.0671875,
+        0.0,
+        0.303125,
+        0.5388888888888889
+      ],
+      "score": 0.8632422089576721,
+      "top_score": 0.8317139446735382,
+      "attributes": [],
+      "average_estimated_speed": 0,
+      "velocity_angle": 0,
+      "type": "object",
+      "max_severity": "detection",
+      "path_data": [
+        [
+          [
+            0.1914,
+            0.3069
+          ],
+          1792566970.892024
+        ],
+        [
+          [
+            0.1891,
+            0.3083
+          ],
+          1792566971.299692
+        ]
+      ]
+    },
+    "thumbnail": null
+  }
+]

@@ -1,0 +1,73 @@
+{
+  "globalEnabled": true,
+  "alertsEnabled": true,
+  "cooldownSeconds": 120,
+  "retentionDays": 30,
+  "maxEvents": 5000,
+  "cameras": {
+    "01": {
+      "enabled": false,
+      "threshold": 0.6,
+      "minArea": 0.007,
+      "maxArea": 0.99,
+      "minTravel": 0.03
+    },
+    "03": {
+      "enabled": false,
+      "threshold": 0.6,
+      "minArea": 0.007,
+      "maxArea": 0.99,
+      "minTravel": 0.03
+    },
+    "04": {
+      "enabled": false,
+      "threshold": 0.6,
+      "minArea": 0.007,
+      "maxArea": 0.99,
+      "minTravel": 0.03
+    },
+    "05": {
+      "enabled": false,
+      "threshold": 0.6,
+      "minArea": 0.007,
+      "maxArea": 0.1,
+      "minTravel": 0.04,
+      "detectionProfile": "720p",
+      "detectionFps": 2
+    },
+    "06": {
+      "enabled": true,
+      "threshold": 0.6,
+      "minArea": 0.001,
+      "maxArea": 0.99,
+      "minTravel": 0.01,
+      "detectionProfile": "720p",
+      "detectionFps": 5
+    },
+    "08": {
+      "enabled": false,
+      "threshold": 0.6,
+      "minArea": 0.007,
+      "maxArea": 0.99,
+      "minTravel": 0.03
+    },
+    "02": {
+      "enabled": false,
+      "threshold": 0.8,
+      "minArea": 0.007,
+      "maxArea": 0.99,
+      "minTravel": 0.03
+    },
+    "07": {
+      "enabled": false,
+      "threshold": 0.6,
+      "minArea": 0.007,
+      "maxArea": 0.99,
+      "minTravel": 0.03,
+      "detectionProfile": "720p",
+      "detectionFps": 2
+    }
+  },
+  "maxEventsPerHour": 5,
+  "ivsecClearedBefore": 1792300992.8382285
+}

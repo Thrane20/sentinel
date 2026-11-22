@@ -51,3 +51,7 @@ test-results/
 
 # Local IVSEC capture output
 ivsec_webhook_events.jsonl
+
+# Camera footage and stills: keep out of this public repo
+*.mp4
+artifacts/cat-replay-2026-10-21/cat-detected.jpg

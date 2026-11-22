@@ -1,0 +1,12 @@
+{
+  "eventId": "1792567020.700349-vjzt12",
+  "confidence": 0.8722793757915497,
+  "areaPercent": 0.45312500000000006,
+  "movementPercent": 0.0,
+  "hasSnapshot": true,
+  "measurementFiltersPass": {
+    "previousSettings": false,
+    "currentSettings": false,
+    "currentWithMovementOff": true
+  }
+}
